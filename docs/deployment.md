@@ -69,7 +69,9 @@ python3 -m deploy.export_services --output data/service-status.json
 # * * * * * cd /path/to/opsdeck && /usr/bin/python3 -m deploy.export_services --output data/service-status.json
 ```
 
-Set `OPSDECK_SERVICES_FILE=/host/path/to/opsdeck/data/service-status.json` in the host deployment's `.env`, then recreate the app container. The exporter writes selected health, CPU, and memory fields atomically; it exports no service configuration or environment. Its output is mode 644 so the non-root container can read it. The reader rejects missing units, invalid states, and snapshots older than two minutes. The scheduler must run after reboot; inspect its host service. This affects only service collection.
+Start or recreate the host deployment with `make docker-up COMPOSE_EXTRA=compose.services.yaml` (or `docker-gpu-up` for NVIDIA). `OPSDECK_SERVICE_EXPORT_DIR` defaults to `./data`; set another host directory if needed. The override mounts this directory at `/host-services` so private parent-directory permissions do not prevent access. For native/custom mounts, set `OPSDECK_SERVICES_FILE` to the readable snapshot path.
+
+The exporter writes selected health, CPU, and memory fields atomically; it exports no service configuration or environment. Its output is mode 644 so the non-root container can read it. The reader rejects missing units, invalid states, and snapshots older than two minutes. The scheduler must run after reboot; inspect its host service. This affects only service collection.
 
 ## Private remote access
 
