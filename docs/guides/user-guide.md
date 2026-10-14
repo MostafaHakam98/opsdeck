@@ -38,7 +38,7 @@ This page reads live CI containers, local image tags and revisions, image sizes,
 
 ## Survey & benchmarks
 
-Imported private surveys retain measured pipeline outcomes, timing comparisons, job details, changes and follow-ups, and the complete original report with its hash. Current host checks appear independently of recorded statuses. See [Runner surveys](surveys.md) for import and persistence instructions. No GitLab token is required for these views.
+Imported private surveys retain measured pipeline outcomes, timing comparisons, job details, changes and follow-ups, and the complete original report with its hash. Current host checks appear independently of recorded statuses. See [Runner surveys](../operations/surveys.md) for import and persistence instructions. No GitLab token is required for these views.
 
 ## Optional GitLab timing view
 
@@ -50,7 +50,7 @@ Counts cover the configured project sample; they are not instance-wide fleet cou
 
 Each item has evidence and a proposed next step. **Opportunity** identifies a condition in the latest available data. **Verify** needs workload or configuration checks. These labels do not claim that tuning has been applied.
 
-Use the [operations workflow](operations.md#runner-optimization) to compare baseline and changed workloads. The web UI does not format devices or edit runner settings.
+Use the [operations workflow](../operations/maintenance.md#runner-optimization) to compare baseline and changed workloads. The web UI does not format devices or edit runner settings.
 
 ## Activity & audit
 

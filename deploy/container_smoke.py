@@ -29,8 +29,8 @@ def main():
         config.chmod(0o600)
         env = {**os.environ, "OPSDECK_ENV_PATH": str(config), "OPSDECK_PORT": str(args.port), "OPSDECK_BIND": "127.0.0.1",
             "OPSDECK_PUBLISH_IP": "127.0.0.1", "OPSDECK_DOCKER_GID": socket_gid}
-        base = ["docker", "compose", "-p", project, "-f", "compose.yaml"]
-        host = [*base, "-f", "compose.host.yaml"]
+        base = ["docker", "compose", "--project-directory", str(root), "-p", project, "-f", "deploy/docker/compose.yaml"]
+        host = [*base, "-f", "deploy/docker/compose.host.yaml"]
 
         def run(command, capture=False):
             return subprocess.run(command, cwd=root, env=env, check=True, text=True,

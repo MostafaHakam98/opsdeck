@@ -53,13 +53,13 @@ import {
   type Plan,
   type Snapshot,
   type Source,
-} from "./api";
+} from "../lib/api";
 import "./styles.css";
 import {
   SurveyPage,
   RunnerInventory,
   RecordedOptimizations,
-} from "./RunnerStack";
+} from "../features/runners/RunnerStack";
 
 const pages = [
   { id: "overview", title: "Overview", icon: LayoutDashboard },

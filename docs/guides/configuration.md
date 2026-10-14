@@ -46,13 +46,13 @@ Enable the runner's local metrics listener and use its actual address. In portab
 Export safe configuration facts with the administrator helper:
 
 ```bash
-sudo python3 deploy/runner_admin.py --export-only --facts ./data/runner-facts.json
+sudo python3 scripts/runner/admin.py --export-only --facts ./data/runner-facts.json
 ```
 
 For Compose, copy those facts into the named volume:
 
 ```bash
-docker compose cp ./data/runner-facts.json opsdeck:/data/runner-facts.json
+docker compose --project-directory . -f deploy/docker/compose.yaml cp ./data/runner-facts.json opsdeck:/data/runner-facts.json
 ```
 
 Only approved fact fields are returned; runner authentication tokens are not read by the dashboard. Prometheus series are summed across labels by metric name; histogram buckets are not treated as queue latency.

@@ -27,9 +27,9 @@ Equivalent explicit commands:
 ```bash
 make init
 export OPSDECK_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
-docker compose -f compose.yaml -f compose.host.yaml up -d --build --wait
+docker compose --project-directory . -f deploy/docker/compose.yaml -f deploy/docker/compose.host.yaml up -d --build --wait
 # With NVIDIA:
-docker compose -f compose.yaml -f compose.host.yaml -f compose.gpu.yaml up -d --build --wait
+docker compose --project-directory . -f deploy/docker/compose.yaml -f deploy/docker/compose.host.yaml -f deploy/docker/compose.gpu.yaml up -d --build --wait
 ```
 
 The host override mounts the node root read-only, shares its PID/network namespaces, and mounts its Docker socket. Linux kernel 5.12+ provides recursive read-only submount support; mounts created later may need container recreation to appear. Docker socket filesystem mode `ro` does **not** make the Docker API read-only. Socket access is a deliberate grant to a trusted monitoring application, even while UI actions are disabled. No service uses `privileged: true`.
@@ -69,7 +69,7 @@ python3 -m deploy.export_services --output data/service-status.json
 # * * * * * cd /path/to/opsdeck && /usr/bin/python3 -m deploy.export_services --output data/service-status.json
 ```
 
-Start or recreate the host deployment with `make docker-up COMPOSE_EXTRA=compose.services.yaml` (or `docker-gpu-up` for NVIDIA). `OPSDECK_SERVICE_EXPORT_DIR` defaults to `./data`; set another host directory if needed. The override mounts this directory at `/host-services` so private parent-directory permissions do not prevent access. For native/custom mounts, set `OPSDECK_SERVICES_FILE` to the readable snapshot path.
+Start or recreate the host deployment with `make docker-up COMPOSE_EXTRA=deploy/docker/compose.services.yaml` (or `docker-gpu-up` for NVIDIA). `OPSDECK_SERVICE_EXPORT_DIR` defaults to `./data`; set another host directory if needed. The override mounts this directory at `/host-services` so private parent-directory permissions do not prevent access. For native/custom mounts, set `OPSDECK_SERVICES_FILE` to the readable snapshot path.
 
 The exporter writes selected health, CPU, and memory fields atomically; it exports no service configuration or environment. Its output is mode 644 so the non-root container can read it. The reader rejects missing units, invalid states, and snapshots older than two minutes. The scheduler must run after reboot; inspect its host service. This affects only service collection.
 
@@ -92,9 +92,9 @@ make setup build service-install
 make service-status
 ```
 
-`install-user.sh` creates a user service. An administrator enables boot persistence with `loginctl enable-linger <service-user>`. Alternatively, adapt `deploy/opsdeck.service.example` for `/opt/opsdeck` and a dedicated account. Configure Docker socket membership deliberately; sensors and service status depend on that account's permissions.
+`install-user.sh` creates a user service. An administrator enables boot persistence with `loginctl enable-linger <service-user>`. Alternatively, adapt `deploy/native/opsdeck.service.example` for `/opt/opsdeck` and a dedicated account. Configure Docker socket membership deliberately; sensors and service status depend on that account's permissions.
 
-For an offline Linux x86_64 / Python 3.12 node, build `make bundle` on a development machine, copy the archive, extract it, and run `bash deploy/install-user.sh`. The bundle includes frontend assets, docs, and wheels, and bootstraps pip without sudo or downloads. It does not include `.env` or databases.
+For an offline Linux x86_64 / Python 3.12 node, build `make bundle` on a development machine, copy the archive, extract it, and run `bash deploy/native/install-user.sh`. The bundle includes frontend assets, docs, and wheels, and bootstraps pip without sudo or downloads. It does not include `.env` or databases.
 
 ## Clusters
 

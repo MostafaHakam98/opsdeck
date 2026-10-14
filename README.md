@@ -13,7 +13,7 @@ make init
 make docker-up
 ```
 
-Open **http://127.0.0.1:8080** and enter the generated access token from the private `.env` file. Requires Docker Engine, Compose 2.30+, GNU Make, and Python 3.12+. See [Getting started](docs/getting-started.md) for native setup and environments without the `safe-git` wrapper.
+Open **http://127.0.0.1:8080** and enter the generated access token from the private `.env` file. Requires Docker Engine, Compose 2.30+, GNU Make, and Python 3.12+. See [Getting started](docs/guides/getting-started.md) for native setup and environments without the `safe-git` wrapper.
 
 For NVIDIA telemetry, configure the node's NVIDIA Container Toolkit and run `make docker-gpu-up`. For a portable app preview without full host access, run `make docker-sandbox-up`.
 
@@ -52,16 +52,18 @@ One application instance monitors one node. History lives in a persistent named 
 
 ## Handbook
 
+Application code lives in `backend/` and `frontend/`; deployment assets are grouped under `deploy/`, runner administration under `scripts/runner/`, and tests by responsibility. See [Repository layout](docs/architecture/repository-layout.md) for the full hierarchy.
+
 | Guide | Purpose |
 |---|---|
-| [Getting started](docs/getting-started.md) | Clone, first launch, and daily commands |
-| [User guide](docs/user-guide.md) | Every page, chart, threshold, and action |
-| [Configuration](docs/configuration.md) | Environment reference and integrations |
-| [Runner surveys](docs/surveys.md) | Private benchmark imports, recorded evidence, and current optimization checks |
-| [Deployment](docs/deployment.md) | Docker, Compose, GPU, native, offline, and cluster guidance |
-| [Operations](docs/operations.md) | Health, logs, backup/restore, updates, and optimization |
-| [Architecture](docs/architecture.md) | Data flow, API, permissions, and limits |
-| [Troubleshooting](docs/troubleshooting.md) | Diagnose startup and missing telemetry |
+| [Getting started](docs/guides/getting-started.md) | Clone, first launch, and daily commands |
+| [User guide](docs/guides/user-guide.md) | Every page, chart, threshold, and action |
+| [Configuration](docs/guides/configuration.md) | Environment reference and integrations |
+| [Runner surveys](docs/operations/surveys.md) | Private benchmark imports, recorded evidence, and current optimization checks |
+| [Deployment](docs/operations/deployment.md) | Docker, Compose, GPU, native, offline, and cluster guidance |
+| [Operations](docs/operations/maintenance.md) | Health, logs, backup/restore, updates, and optimization |
+| [Architecture](docs/architecture/overview.md) | Data flow, API, permissions, and limits |
+| [Troubleshooting](docs/guides/troubleshooting.md) | Diagnose startup and missing telemetry |
 
 `.gitignore` and `.dockerignore` exclude credentials, local databases, caches, build outputs, internal host reports, and `.tmp/`. `make init` creates that scratch directory; Git intentionally does not track it.
 

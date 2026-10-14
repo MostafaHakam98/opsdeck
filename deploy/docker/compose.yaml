@@ -4,6 +4,7 @@ services:
     image: opsdeck:local
     build:
       context: .
+      dockerfile: deploy/docker/Dockerfile
       target: runtime
     env_file: '${OPSDECK_ENV_PATH:-.env}'
     environment:

@@ -4,9 +4,9 @@ PYTHON ?= python3
 VENV := .venv/bin/python
 NPM_CACHE ?= /tmp/opsdeck-npm-cache
 COMPOSE_EXTRA ?=
-COMPOSE := docker compose -f compose.yaml $(if $(COMPOSE_EXTRA),-f $(COMPOSE_EXTRA))
-HOST_COMPOSE := $(COMPOSE) -f compose.host.yaml
-GPU_COMPOSE := $(HOST_COMPOSE) -f compose.gpu.yaml
+COMPOSE := docker compose --project-directory . -f deploy/docker/compose.yaml $(if $(COMPOSE_EXTRA),-f $(COMPOSE_EXTRA))
+HOST_COMPOSE := $(COMPOSE) -f deploy/docker/compose.host.yaml
+GPU_COMPOSE := $(HOST_COMPOSE) -f deploy/docker/compose.gpu.yaml
 DOCKER_SOCKET ?= /var/run/docker.sock
 DOCKER_SOCKET_GID = $(shell stat -c '%g' '$(DOCKER_SOCKET)' 2>/dev/null)
 IMAGE ?= opsdeck:local
@@ -53,8 +53,8 @@ test-e2e: build ## Run Chromium browser checks (install it first with Playwright
 	npm run test:e2e --prefix frontend
 
 check: test build ## Run tests, production build, shell syntax, and Python compilation
-	bash -n tune-runner-host.sh deploy/*.sh
-	$(PYTHON) -m compileall -q backend deploy
+	bash -n scripts/runner/*.sh deploy/native/*.sh deploy/offline/*.sh
+	$(PYTHON) -m compileall -q backend deploy scripts
 
 format: ## Format frontend source and configuration
 	npm exec --prefix frontend -- prettier --write frontend/src frontend/e2e frontend/*.ts frontend/*.json frontend/index.html
@@ -67,10 +67,10 @@ backup: ## Make a consistent SQLite backup under ignored .tmp/backups/
 	$(PYTHON) -m deploy.backup --source '$(BACKUP_DB)'
 
 bundle: ## Build the offline Linux x86_64 / Python 3.12 deployment archive
-	bash deploy/build-bundle.sh
+	bash deploy/offline/build-bundle.sh
 
 service-install: ## Install the built native app as a user systemd service
-	bash deploy/install-user.sh
+	bash deploy/native/install-user.sh
 
 service-status: ## Show native service state
 	systemctl --user status opsdeck --no-pager
@@ -79,7 +79,7 @@ service-logs: ## Follow native application logs
 	journalctl --user -u opsdeck -f
 
 docker-build: ## Build the multi-stage application image
-	docker build -t $(IMAGE) .
+	docker build -f deploy/docker/Dockerfile -t $(IMAGE) .
 
 docker-test: ## Verify Compose auth, persistent history, and Linux host collection in a disposable project
 	$(PYTHON) -m deploy.container_smoke

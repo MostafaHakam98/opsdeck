@@ -33,8 +33,8 @@ Compose:
 
 ```bash
 make docker-backup
-docker compose exec opsdeck ls /data/backups
-docker compose cp opsdeck:/data/backups/<backup-name>.sqlite .tmp/backups/
+docker compose --project-directory . -f deploy/docker/compose.yaml exec opsdeck ls /data/backups
+docker compose --project-directory . -f deploy/docker/compose.yaml cp opsdeck:/data/backups/<backup-name>.sqlite .tmp/backups/
 ```
 
 Container backups live in the same persistent volume until copied off-node. Keep that extra copy independently.
@@ -45,7 +45,7 @@ Stop the application before replacing its database. Keep the current database an
 
 For native mode, stop the foreground process or service, move the existing set into a timestamped recovery directory, copy the verified backup to the configured database path, confirm service-account ownership, then restart.
 
-For Compose, stop the service with `docker compose stop opsdeck`. Use a one-off container attached to the same named volume to move the existing database/journals into `/data/recovery/<stamp>/` and restore the selected backup. Keep actions disabled until verifying the restored history. Avoid starting a second sampler against the same SQLite file.
+For Compose, stop the service with `docker compose --project-directory . -f deploy/docker/compose.yaml stop opsdeck`. Use a one-off container attached to the same named volume to move the existing database/journals into `/data/recovery/<stamp>/` and restore the selected backup. Keep actions disabled until verifying the restored history. Avoid starting a second sampler against the same SQLite file.
 
 ## Update and rollback
 
@@ -77,13 +77,13 @@ To rotate access, replace the token in the protected environment file with a fre
 The administrator helper previews a single selected runner without exposing its token:
 
 ```bash
-sudo python3 deploy/runner_admin.py --runner '<name>' --concurrent 8 --requests 4 --metrics
+sudo python3 scripts/runner/admin.py --runner '<name>' --concurrent 8 --requests 4 --metrics
 # Apply only the reviewed candidate:
-sudo python3 deploy/runner_admin.py --runner '<name>' --concurrent 8 --requests 4 --metrics --apply
+sudo python3 scripts/runner/admin.py --runner '<name>' --concurrent 8 --requests 4 --metrics --apply
 ```
 
 Existing per-runner job limits are preserved unless `--limit N` is specified. CPU and memory ceilings are optional measured budgets, not universal defaults. A new metrics listener may require a drained restart.
 
-`tune-runner-host.sh` targets the two named NVMe devices and `/var/lib/docker` plus `/cache`. Run its preflight and review ownership, actual workspace paths, storage driver, capacity, and downtime before explicit device confirmation. Formatting pauses all projects on that runner. Failed migrations leave services stopped for inspection.
+`scripts/runner/tune-runner-host.sh` targets the two named NVMe devices and `/var/lib/docker` plus `/cache`. Run its preflight and review ownership, actual workspace paths, storage driver, capacity, and downtime before explicit device confirmation. Formatting pauses all projects on that runner. Failed migrations leave services stopped for inspection.
 
 The retained HDD directories are pre-migration snapshots, not current backups. Reverse-sync current data during a drained maintenance window before reverting if later data must be preserved. The script's rollback requires explicit acknowledgment of the older snapshot. See its comments and printed configuration backups before starting services.

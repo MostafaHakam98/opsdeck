@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Tune a Linux GitLab runner host. Run as root, one phase at a time:
 #
-#   sudo bash tune-runner-host.sh status            what is set now (no secrets printed)
-#   sudo bash tune-runner-host.sh concurrency [N]   default 8; measure before raising further
-#   sudo bash tune-runner-host.sh nvme-preflight    read-only migration facts
-#   sudo bash tune-runner-host.sh nvme --confirm-unused-devices
-#   sudo bash tune-runner-host.sh nvme-rollback --confirm-original-snapshot
+#   sudo bash scripts/runner/tune-runner-host.sh status
+#   sudo bash scripts/runner/tune-runner-host.sh concurrency [N]
+#   sudo bash scripts/runner/tune-runner-host.sh nvme-preflight
+#   sudo bash scripts/runner/tune-runner-host.sh nvme --confirm-unused-devices
+#   sudo bash scripts/runner/tune-runner-host.sh nvme-rollback --confirm-original-snapshot
 #
 # Why: 48 threads and 503 GB RAM run 4 jobs at once, and every job's I/O
 # (Docker layers, /builds, the runner cache) lands on sda, a 7200 rpm HDD,
@@ -43,8 +43,8 @@ phase_concurrency() {
   local n="${1:-8}"
   [[ "$n" =~ ^[0-9]+$ && "$n" -ge 1 && "$n" -le 32 ]] || { echo "N must be 1..32" >&2; exit 2; }
   # Refuses ambiguous multiple registrations. Explicit per-runner limits are
-  # preserved; use runner_admin.py --runner NAME --limit N after reviewing them.
-  python3 "$SCRIPT_DIR/deploy/runner_admin.py" --config "$CONFIG" --concurrent "$n" --apply
+  # preserved; use admin.py --runner NAME --limit N after reviewing them.
+  python3 "$SCRIPT_DIR/admin.py" --config "$CONFIG" --concurrent "$n" --apply
   show_keys
   # gitlab-runner reloads config.toml on change; no restart, running jobs untouched.
   sleep 5

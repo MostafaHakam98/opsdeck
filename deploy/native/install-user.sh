@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the prebuilt application as a native Linux user service.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
 [[ "$ROOT" != *' '* ]] || { echo 'Install into a path without spaces' >&2; exit 1; }
 [[ -d frontend/dist ]] || { echo 'Build the frontend before installing' >&2; exit 1; }

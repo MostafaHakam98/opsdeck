@@ -3,8 +3,8 @@ import re
 
 
 def test_handbook_relative_links_resolve():
-    root = Path(__file__).resolve().parents[1]
-    pages = [root / "README.md", *sorted((root / "docs").glob("*.md"))]
+    root = Path(__file__).resolve().parents[2]
+    pages = [root / "README.md", *sorted((root / "docs").rglob("*.md"))]
     for page in pages:
         for target in re.findall(r"\[[^\]]+\]\(([^\s)]+)\)", page.read_text()):
             if "://" in target or target.startswith("#"):

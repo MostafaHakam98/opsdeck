@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { Box, ClipboardList, Search, Server } from "lucide-react";
-import { bytes, duration, safeUrl, type Source } from "./api";
+import { bytes, duration, safeUrl, type Source } from "../../lib/api";
 
 function Section({
   title,

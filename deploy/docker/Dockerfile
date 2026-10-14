@@ -20,6 +20,7 @@ COPY --from=dependencies /install /usr/local
 WORKDIR /app
 COPY --chown=opsdeck:opsdeck backend/ backend/
 COPY --chown=opsdeck:opsdeck deploy/ deploy/
+COPY --chown=opsdeck:opsdeck scripts/ scripts/
 COPY --from=frontend /build/frontend/dist/ frontend/dist/
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OPSDECK_BIND=0.0.0.0 OPSDECK_PORT=8080 \
     OPSDECK_DB=/data/opsdeck.sqlite OPSDECK_SCOPE=container OPSDECK_ENV_FILE=/data/config.env

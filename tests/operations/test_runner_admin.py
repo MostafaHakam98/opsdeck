@@ -1,6 +1,6 @@
 import argparse
 import tomllib
-from deploy.runner_admin import safe_facts, tune
+from scripts.runner.admin import safe_facts, tune
 
 CONFIG = '''concurrent = 4
 [[runners]]

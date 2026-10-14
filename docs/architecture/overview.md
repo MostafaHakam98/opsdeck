@@ -26,11 +26,17 @@ Collectors poll independently in background tasks, with blocking reads in worker
 | `backend/config.py`, `backend/run.py` | Environment settings and one-worker launcher |
 | `backend/store.py` | SQLite samples, averaged history buckets, audit events |
 | `backend/actions.py` | Ownership validation, previews, expiry, replay protection, execution |
-| `frontend/src/` | Dashboard pages, charts, formatting, and client requests |
-| `deploy/` | Initialization, backup, offline packaging, native service, runner helper |
+| `frontend/src/app/` | Dashboard entry point, page wiring, and application styles |
+| `frontend/src/features/runners/`, `frontend/src/lib/` | Runner/survey views, API client, formatting helpers |
+| `deploy/` | Stable Python initialization, backup, import/export, and verification commands |
+| `deploy/native/`, `deploy/offline/` | Native service assets and offline distribution builder |
+| `scripts/runner/` | Administrator runner configuration and host tuning |
+| `tests/backend/`, `tests/operations/` | Runtime checks and operational/deployment checks |
 | `docs/` | User and operator handbook |
 | `.tmp/` | Ignored local screenshots, browser artifacts, and backups |
-| `Dockerfile`, `compose*.yaml` | Runtime image and explicit deployment modes |
+| `deploy/docker/` | Runtime Dockerfile and explicit Compose deployment modes |
+
+See [Repository layout](repository-layout.md) for the directory hierarchy and command-path conventions.
 
 ## HTTP surface
 

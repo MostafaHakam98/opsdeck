@@ -13,7 +13,7 @@ from deploy.configure import initialize
 
 def test_init_generates_private_config_and_does_not_rotate_existing_token(tmp_path, monkeypatch):
     target = tmp_path / ".env"
-    template = Path(__file__).resolve().parents[1] / ".env.example"
+    template = Path(__file__).resolve().parents[2] / ".env.example"
     assert initialize(target, template)
     original = target.read_bytes()
     assert target.stat().st_mode & 0o777 == 0o600
