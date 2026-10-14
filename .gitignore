@@ -1,0 +1,18 @@
+.venv/
+node_modules/
+frontend/dist/
+__pycache__/
+.pytest_cache/
+.env
+.env.*
+!.env.example
+data/
+*.sqlite*
+*.log
+.tmp/
+dist/
+# Existing internal host report is kept local; this repository is generic.
+CI-SPEEDUP-REPORT.md
+frontend/test-results/
+frontend/playwright-report/
+*.tsbuildinfo

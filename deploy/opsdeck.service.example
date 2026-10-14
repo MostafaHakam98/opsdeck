@@ -1,0 +1,26 @@
+[Unit]
+Description=OpsDeck infrastructure workspace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=opsdeck
+Group=opsdeck
+# Docker access grants substantial host privileges; opt in deliberately.
+SupplementaryGroups=docker
+WorkingDirectory=/opt/opsdeck
+# backend.run loads /opt/opsdeck/.env without shell evaluation.
+ExecStart=/opt/opsdeck/.venv/bin/python -m backend.run
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/opsdeck/data
+ProtectHome=true
+UMask=0077
+MemoryMax=1G
+CPUQuota=100%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
