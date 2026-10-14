@@ -1,0 +1,39 @@
+# Linux node monitoring. Use with compose.yaml, not by itself.
+services:
+  opsdeck:
+    network_mode: host
+    pid: host
+    ports: !reset []
+    group_add:
+      - '${OPSDECK_DOCKER_GID:?Use make docker-up or set the Docker socket group ID}'
+    environment:
+      OPSDECK_BIND: '${OPSDECK_BIND:-127.0.0.1}'
+      OPSDECK_PORT: '${OPSDECK_PORT:-8080}'
+      OPSDECK_SCOPE: host
+      OPSDECK_HOST_ROOT: /host
+      OPSDECK_PROCFS_PATH: /host/proc
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: false
+      - type: bind
+        source: '${DOCKER_SOCKET:-/var/run/docker.sock}'
+        target: /var/run/docker.sock
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,urllib.request; address=os.getenv('OPSDECK_BIND','127.0.0.1'); address='127.0.0.1' if address=='0.0.0.0' else address; urllib.request.urlopen('http://'+address+':'+os.getenv('OPSDECK_PORT','8080')+'/healthz',timeout=2)"
+      interval: 15s
+      timeout: 3s
+      start_period: 15s
+      retries: 3

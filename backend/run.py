@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import re
+import argparse
 
 
 def load_environment(path):
@@ -22,7 +23,11 @@ def load_environment(path):
 
 
 if __name__ == "__main__":
+    os.umask(0o077)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--reload", action="store_true", help="Reload source changes during local development")
+    args = parser.parse_args()
     load_environment(Path(os.environ.get("OPSDECK_ENV_FILE", ".env")))
     import uvicorn
     uvicorn.run("backend.main:factory", factory=True, host=os.getenv("OPSDECK_BIND", "127.0.0.1"),
-        port=int(os.getenv("OPSDECK_PORT", "8080")), workers=1, access_log=False, proxy_headers=False)
+        port=int(os.getenv("OPSDECK_PORT", "8080")), workers=1, reload=args.reload, access_log=False, proxy_headers=False)

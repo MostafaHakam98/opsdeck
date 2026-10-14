@@ -89,7 +89,7 @@ def create_app(settings=None, collect=True, action_factory=None):
     async def lifespan(app):
         tasks = []
         if collect:
-            host, engine = HostCollector(), DockerCollector()
+            host, engine = HostCollector(settings.host_root, settings.procfs_path, settings.scope), DockerCollector()
             tasks = [asyncio.create_task(poll("host", host.collect, settings.interval)),
                 asyncio.create_task(poll("docker", engine.collect, max(settings.interval, 15))),
                 asyncio.create_task(poll("gpu", gpu_collect, max(settings.interval, 15))),

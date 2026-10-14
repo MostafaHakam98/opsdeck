@@ -37,3 +37,13 @@ jobs:
         working-directory: frontend
       - run: npm run test:e2e
         working-directory: frontend
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: make init docker-config
+      - run: make docker-build
+      - run: make docker-test

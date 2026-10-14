@@ -1,0 +1,39 @@
+name: opsdeck
+services:
+  opsdeck:
+    image: opsdeck:local
+    build:
+      context: .
+      target: runtime
+    env_file: '${OPSDECK_ENV_PATH:-.env}'
+    environment:
+      OPSDECK_BIND: 0.0.0.0
+      OPSDECK_PORT: '8080'
+      OPSDECK_DB: /data/opsdeck.sqlite
+      OPSDECK_SCOPE: container
+      OPSDECK_HOST_ROOT: ''
+      OPSDECK_PROCFS_PATH: /proc
+      OPSDECK_RUNNER_FACTS: /data/runner-facts.json
+    ports:
+      - '${OPSDECK_PUBLISH_IP:-127.0.0.1}:${OPSDECK_PORT:-8080}:8080'
+    volumes:
+      - opsdeck_data:/data
+    labels:
+      opsdeck.application: opsdeck
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+volumes:
+  opsdeck_data:

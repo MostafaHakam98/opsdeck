@@ -1,0 +1,6 @@
+# NVIDIA Container Toolkit is required. Only the utility/management driver APIs are requested.
+services:
+  opsdeck:
+    gpus: all
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: utility

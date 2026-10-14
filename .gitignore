@@ -16,3 +16,10 @@ CI-SPEEDUP-REPORT.md
 frontend/test-results/
 frontend/playwright-report/
 *.tsbuildinfo
+.ruff_cache/
+.mypy_cache/
+.coverage*
+coverage/
+htmlcov/
+*.pem
+*.key

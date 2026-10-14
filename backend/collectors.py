@@ -10,6 +10,7 @@ import re
 import socket
 import subprocess
 import time
+from types import SimpleNamespace
 from urllib.parse import quote
 
 import docker
@@ -17,8 +18,8 @@ import httpx
 import psutil
 
 
-def command(args: list[str], timeout=5):
-    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=True).stdout
+def command(args: list[str], timeout=5, env=None):
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=True, env=env).stdout
 
 
 def source(data=None, status="healthy", message=None):
@@ -30,12 +31,12 @@ def failure(exc, hint):
     return source(status="unavailable", message=f"{hint} ({type(exc).__name__})")
 
 
-def pressure():
+def pressure(procfs_path="/proc"):
     result = {}
     for name in ("cpu", "io", "memory"):
         try:
             result[name] = {}
-            for line in Path(f"/proc/pressure/{name}").read_text().splitlines():
+            for line in Path(procfs_path, "pressure", name).read_text().splitlines():
                 kind, *fields = line.split()
                 result[name][kind] = {k: float(v) for k, v in (f.split("=") for f in fields)}
         except (OSError, ValueError):
@@ -43,11 +44,32 @@ def pressure():
     return result
 
 
+def host_partitions(host_root, procfs_path):
+    """Read PID 1's mount namespace, not the monitoring container's /proc/self/mounts."""
+    def unescape(value):
+        return re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), value)
+    mounts = []
+    for line in Path(procfs_path, "1", "mounts").read_text().splitlines():
+        fields = line.split()
+        if len(fields) >= 3 and (fields[0].startswith("/dev/") or fields[2] in ("zfs", "btrfs", "nfs", "nfs4", "xfs", "ext4")):
+            mounts.append(SimpleNamespace(device=unescape(fields[0]), mountpoint=unescape(fields[1]), fstype=fields[2]))
+    return mounts
+
+
+def filesystem_path(host_root, mountpoint):
+    # A leading slash must not discard host_root when joining paths.
+    return Path(host_root or "/") / mountpoint.lstrip("/")
+
+
 class HostCollector:
-    def __init__(self):
+    def __init__(self, host_root="", procfs_path="/proc", scope="native"):
         self.previous = None
         self.inventory = None
         self.inventory_at = 0
+        self.host_root = host_root
+        self.procfs_path = procfs_path
+        self.scope = "host" if host_root else scope
+        psutil.PROCFS_PATH = procfs_path
 
     def collect(self):
         now = time.monotonic()
@@ -69,12 +91,14 @@ class HostCollector:
                 "tx_bytes_s": max(0, counters.bytes_sent - prev.bytes_sent) / elapsed if prev else None,
                 "errors": counters.errin + counters.errout, "drops": counters.dropin + counters.dropout})
         volumes = []
-        for part in psutil.disk_partitions():
+        partitions = host_partitions(self.host_root, self.procfs_path) if self.host_root else psutil.disk_partitions()
+        for part in partitions:
             if part.device.startswith("/dev/loop") or part.fstype in ("squashfs", "overlay", "tmpfs"):
                 continue
             try:
-                usage = psutil.disk_usage(part.mountpoint)
-                vfs = os.statvfs(part.mountpoint)
+                mounted = filesystem_path(self.host_root, part.mountpoint)
+                usage = psutil.disk_usage(mounted)
+                vfs = os.statvfs(mounted)
                 volumes.append({"device": part.device, "mount": part.mountpoint, "fstype": part.fstype, "total": usage.total,
                     "used": usage.used, "free": usage.free, "percent": usage.percent,
                     "inode_percent": 100 * (vfs.f_files - vfs.f_ffree) / vfs.f_files if vfs.f_files else None})
@@ -94,7 +118,10 @@ class HostCollector:
                 "busy_percent": min(100, max(0, getattr(counters, "busy_time", 0) - getattr(prev, "busy_time", 0)) / elapsed / 10) if prev else None})
         if now - self.inventory_at > 300 or self.inventory is None:
             try:
-                self.inventory = json.loads(command(["lsblk", "--json", "--bytes", "-o", "NAME,SIZE,ROTA,FSTYPE,MOUNTPOINTS,TYPE"]))["blockdevices"]
+                args = ["lsblk", "--json", "--bytes", "-o", "NAME,SIZE,ROTA,FSTYPE,MOUNTPOINTS,TYPE"]
+                if self.host_root:
+                    args += ["--sysroot", self.host_root]
+                self.inventory = json.loads(command(args))["blockdevices"]
                 self.inventory = [d for d in self.inventory if d.get("type") == "disk"]
             except (OSError, ValueError, subprocess.SubprocessError):
                 self.inventory = []
@@ -113,13 +140,24 @@ class HostCollector:
                 processes.append({"pid": p["pid"], "name": p["name"], "memory_bytes": p["memory_info"].rss if p["memory_info"] else 0, "cpu_percent": p["cpu_percent"]})
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-        return source({"hostname": socket.gethostname(), "os": platform.platform(), "boot_time": psutil.boot_time(),
+        hostname, operating_system = socket.gethostname(), platform.platform()
+        if self.host_root:
+            try:
+                hostname = Path(self.host_root, "etc", "hostname").read_text().strip()
+            except OSError:
+                hostname = "Host name unavailable"
+            try:
+                release = dict(line.split("=", 1) for line in Path(self.host_root, "etc", "os-release").read_text().splitlines() if "=" in line)
+                operating_system = release.get("PRETTY_NAME", "Linux").strip('"') + " / " + platform.release()
+            except OSError:
+                operating_system = "Linux / " + platform.release()
+        return source({"hostname": hostname, "os": operating_system, "scope": self.scope, "boot_time": psutil.boot_time(),
             "cpu": {"percent": psutil.cpu_percent(interval=.1), "cores": psutil.cpu_count(logical=False), "threads": psutil.cpu_count(),
                 "load": list(os.getloadavg()), "mhz": freq.current if freq else None},
             "memory": {"total": vm.total, "available": vm.available, "used": vm.total - vm.available, "percent": vm.percent,
                 "cached": getattr(vm, "cached", None), "swap_total": swap.total, "swap_used": swap.used},
             "volumes": volumes, "disks": disk_rates, "inventory": self.inventory, "network": networks,
-            "pressure": pressure(), "temperatures": temperatures,
+            "pressure": pressure(self.procfs_path), "temperatures": temperatures,
             "processes": len(psutil.pids()), "top_processes": sorted(processes, key=lambda p: p["memory_bytes"], reverse=True)[:15]})
 
 
@@ -128,7 +166,13 @@ def services_collect(settings):
     if not names:
         return source([], "not_configured", "Set OPSDECK_SERVICES to the service units to monitor")
     try:
-        output = command(["systemctl", "show", "--property=Id,LoadState,ActiveState,SubState,ExecMainStatus,MemoryCurrent,CPUUsageNSec", "--", *names])
+        env = None
+        if settings.host_root:
+            bus = Path(settings.host_root, "run", "dbus", "system_bus_socket")
+            if not bus.exists():
+                return source([], "unavailable", "Host system bus is not mounted; use native mode for service status on this node")
+            env = {**os.environ, "DBUS_SYSTEM_BUS_ADDRESS": f"unix:path={bus}"}
+        output = command(["systemctl", "--system", "show", "--property=Id,LoadState,ActiveState,SubState,ExecMainStatus,MemoryCurrent,CPUUsageNSec", "--", *names], env=env)
         rows = []
         for block in output.strip().split("\n\n"):
             values = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)

@@ -51,11 +51,15 @@ test("real API authentication, hardware, all pages, and unavailable integrations
 });
 test("container action requires preview and exact typed confirmation", async ({
   page,
+  request,
 }) => {
   let executed = false;
+  const response = await request.get("/api/snapshot", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const template = await response.json();
   await page.route("**/api/snapshot", async (route) => {
-    const response = await route.fetch();
-    const snapshot = await response.json();
+    const snapshot = structuredClone(template);
     snapshot.actions_enabled = true;
     snapshot.sources.docker = {
       status: "healthy",

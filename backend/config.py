@@ -17,6 +17,9 @@ class Settings:
     runner_url: str = field(default_factory=lambda: os.getenv("RUNNER_METRICS_URL", "http://127.0.0.1:9252/metrics"))
     runner_facts: str = field(default_factory=lambda: os.getenv("OPSDECK_RUNNER_FACTS", "./data/runner-facts.json"))
     services: list[str] = field(default_factory=lambda: [s.strip() for s in os.getenv("OPSDECK_SERVICES", "docker.service,gitlab-runner.service,tailscaled.service").split(",") if s.strip()][:12])
+    host_root: str = field(default_factory=lambda: os.getenv("OPSDECK_HOST_ROOT", "").rstrip("/"))
+    procfs_path: str = field(default_factory=lambda: os.getenv("OPSDECK_PROCFS_PATH", os.getenv("OPSDECK_HOST_ROOT", "").rstrip("/") + "/proc"))
+    scope: str = field(default_factory=lambda: os.getenv("OPSDECK_SCOPE", "native"))
     static: Path = field(default_factory=lambda: Path(__file__).resolve().parents[1] / "frontend" / "dist")
 
     def validate(self):
@@ -24,3 +27,5 @@ class Settings:
             raise ValueError("Set OPSDECK_TOKEN to a random secret of at least 32 characters")
         if self.gitlab_token and not self.gitlab_url.startswith("https://"):
             raise ValueError("GITLAB_URL must use HTTPS when a token is configured")
+        if self.host_root and (not Path(self.host_root).is_absolute() or not Path(self.procfs_path, "meminfo").is_file()):
+            raise ValueError("Host monitoring requires an absolute host root and a readable host procfs mount")

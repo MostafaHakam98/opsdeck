@@ -620,6 +620,19 @@ function App() {
           {page === "overview" && (
             <>
               <SourceNotice source={sources.host} name="Host" />
+              {host?.scope === "container" && (
+                <div className="notice">
+                  <Server size={18} />
+                  <div>
+                    <strong>Container view</strong>
+                    <p>
+                      Full node monitoring is not enabled. Use the Linux host
+                      configuration to see the node's filesystems, processes,
+                      and interfaces.
+                    </p>
+                  </div>
+                </div>
+              )}
               {stats}
               <div className="two-column overview-columns">
                 <Panel
@@ -733,12 +746,35 @@ function App() {
           {page === "host" && (
             <>
               <SourceNotice source={sources.host} name="Host" />
+              {host?.scope === "container" && (
+                <div className="notice">
+                  <Server size={18} />
+                  <div>
+                    <strong>Container view</strong>
+                    <p>
+                      Full node monitoring is not enabled. Use the Linux host
+                      configuration to see the node's filesystems, processes,
+                      and interfaces.
+                    </p>
+                  </div>
+                </div>
+              )}
               {stats}
               <div className="two-column">
                 <Panel title="Host facts">
                   <dl className="facts">
                     <dt>Hostname</dt>
                     <dd>{host?.hostname || "—"}</dd>
+                    <dt>Collection scope</dt>
+                    <dd>
+                      {host?.scope === "host"
+                        ? "Linux node"
+                        : host?.scope === "native"
+                          ? "Native node"
+                          : host?.scope === "container"
+                            ? "Container view"
+                            : "—"}
+                    </dd>
                     <dt>Operating system</dt>
                     <dd>{host?.os || "—"}</dd>
                     <dt>Uptime</dt>

@@ -10,6 +10,7 @@ cp -a backend deploy dist/bundle/
 # Keep frontend artifacts in the path expected by the backend.
 mkdir -p dist/bundle/frontend
 cp -a frontend/dist dist/bundle/frontend/
-cp .env.example README.md tune-runner-host.sh dist/bundle/
-tar --exclude=__pycache__ -czf dist/opsdeck-linux-x86_64-py312.tar.gz -C dist/bundle backend frontend deploy wheels .env.example README.md tune-runner-host.sh
+cp -a docs dist/bundle/
+cp .env.example README.md Makefile Dockerfile .dockerignore compose*.yaml tune-runner-host.sh dist/bundle/
+tar --exclude=__pycache__ -czf dist/opsdeck-linux-x86_64-py312.tar.gz -C dist/bundle backend frontend deploy docs wheels .env.example README.md Makefile Dockerfile .dockerignore compose.yaml compose.host.yaml compose.gpu.yaml tune-runner-host.sh
 sha256sum dist/opsdeck-linux-x86_64-py312.tar.gz
