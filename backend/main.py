@@ -15,6 +15,7 @@ from backend.collectors import DockerCollector, HostCollector, failure, gitlab_c
 from backend.config import Settings
 from backend.insights import insights
 from backend.store import Store
+from backend.findings import collect_findings, observations
 
 logger = logging.getLogger("opsdeck")
 
@@ -33,7 +34,7 @@ def create_app(settings=None, collect=True, action_factory=None):
     settings = settings or Settings()
     settings.validate()
     store = Store(settings.db)
-    state = {name: {"status": "collecting", "data": None, "updated_at": None, "message": "Waiting for the first sample"} for name in ("host", "docker", "gpu", "runner", "gitlab", "services")}
+    state = {name: {"status": "collecting", "data": None, "updated_at": None, "message": "Waiting for the first sample"} for name in ("host", "docker", "gpu", "runner", "gitlab", "services", "findings")}
     active_alerts = set()
     auth_attempts = {}
     action_service = Actions(settings.actions, store, action_factory)
@@ -43,6 +44,8 @@ def create_app(settings=None, collect=True, action_factory=None):
             started = time.monotonic()
             try:
                 state[name] = await asyncio.to_thread(fn)
+                if name == "docker" and state[name]["status"] == "healthy":
+                    await asyncio.to_thread(store.observe_workers, state[name]["data"]["containers"], settings.retention)
             except Exception as exc:
                 # Avoid printing exception messages with configured credentials.
                 logger.warning("Collector %s failed: %s", name, type(exc).__name__)
@@ -96,6 +99,7 @@ def create_app(settings=None, collect=True, action_factory=None):
                 asyncio.create_task(poll("runner", lambda: runner_collect(settings), 15)),
                 asyncio.create_task(poll("gitlab", lambda: gitlab_collect(settings), 60)),
                 asyncio.create_task(poll("services", lambda: services_collect(settings), 15)), asyncio.create_task(record())]
+            tasks.append(asyncio.create_task(poll("findings", lambda: collect_findings(settings), 30)))
         yield
         for task in tasks:
             task.cancel()
@@ -143,6 +147,10 @@ def create_app(settings=None, collect=True, action_factory=None):
         for key, value in state.items():
             age = now - value["updated_at"] if value.get("updated_at") else None
             sources[key] = {**value, "age_seconds": age, "stale": age is not None and age > (180 if key == "gitlab" else max(45, settings.interval * 3))}
+        if sources["findings"].get("data"):
+            sources["findings"]["data"] = observations(sources["findings"]["data"], state)
+        if sources["docker"].get("data"):
+            sources["docker"]["data"] = {**sources["docker"]["data"], "worker_history": store.workers()}
         return {"sources": sources, "alerts": alerts, "recommendations": recommendations,
             "server_time": now, "sample_seconds": settings.interval, "retention_days": settings.retention,
             "actions_enabled": settings.actions, "history_error": app.state.history_error, "version": "0.1.0"}

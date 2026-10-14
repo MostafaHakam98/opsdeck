@@ -22,6 +22,7 @@ Collectors poll independently in background tasks, with blocking reads in worker
 |---|---|
 | `backend/main.py` | API, authentication, collector scheduling, history and alert events |
 | `backend/collectors.py` | Host, Docker, GPU, GitLab, runner, and systemd reads |
+| `backend/findings.py` | Validated private survey archives and independent current checks |
 | `backend/config.py`, `backend/run.py` | Environment settings and one-worker launcher |
 | `backend/store.py` | SQLite samples, averaged history buckets, audit events |
 | `backend/actions.py` | Ownership validation, previews, expiry, replay protection, execution |
@@ -56,7 +57,7 @@ Host Compose has explicit node access; portable Compose does not. The applicatio
 ## Current limits
 
 - One node per instance and one sampler worker per database; no fleet aggregation or distributed tracing.
-- Host/history: default 10-second interval. Docker/GPU/runner/services: at least 15 seconds. GitLab: 60 seconds.
+- Host/history: default 10-second interval. Docker/GPU/runner/services: at least 15 seconds. Survey files: 30 seconds. Optional GitLab: 60 seconds.
 - Docker inventory: 200 containers; stats: 64 running containers. Disk usage: five-minute cache.
 - Processes: top 15 by resident memory. GPU history: first detected device; hardware view: every device.
 - GitLab: at most eight projects and bounded pipeline/job samples, as documented in configuration.

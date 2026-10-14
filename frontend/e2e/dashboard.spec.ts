@@ -22,7 +22,8 @@ test("real API authentication, hardware, all pages, and unavailable integrations
   for (const name of [
     "Host & hardware",
     "Docker",
-    "Pipelines & runners",
+    "Runner stack",
+    "Survey & benchmarks",
     "Optimization",
     "Activity & audit",
     "Connections",
@@ -140,4 +141,125 @@ test("mobile layout remains usable without page overflow", async ({ page }) => {
     ),
   ).toBe(true);
   await page.screenshot({ path: "../.tmp/opsdeck-mobile.png", fullPage: true });
+});
+
+test("survey evidence and observed worker history remain distinct", async ({
+  page,
+  request,
+}) => {
+  const template = await (
+    await request.get("/api/snapshot", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json();
+  await page.route("**/api/snapshot", async (route) => {
+    const snapshot = structuredClone(template);
+    snapshot.sources.findings = {
+      status: "healthy",
+      updated_at: Date.now() / 1000,
+      data: {
+        title: "Example runner survey",
+        recorded_on: "2026-01-01",
+        source_name: "Private operator report",
+        imported_at: Date.now() / 1000,
+        context: { Machine: "Example workstation" },
+        benchmarks: [
+          {
+            pipeline_id: 100,
+            label: "Baseline",
+            status: "success",
+            runner_seconds: 180,
+            wall_seconds: 120,
+            queue_seconds: 0,
+            passed_jobs: 1,
+            total_jobs: 1,
+            evidence: "Recorded evidence",
+            jobs: [{ name: "example-build", status: "success", duration: 180 }],
+          },
+          {
+            pipeline_id: 101,
+            label: "Interrupted",
+            status: "canceled",
+            runner_seconds: null,
+            wall_seconds: null,
+            queue_seconds: null,
+            passed_jobs: null,
+            total_jobs: null,
+            evidence: "Recorded evidence",
+            jobs: [],
+          },
+        ],
+        job_comparisons: [{ name: "example-build", seconds: [180] }],
+        notes: ["Projected timing is not a measurement."],
+        optimizations: [
+          {
+            key: "cache",
+            title: "Cache migration",
+            scope: "host",
+            recorded_status: "prepared",
+            detail: "Prepared during survey",
+            evidence: "Report",
+            current_check: {
+              status: "verified",
+              detail: "Current device independently measured",
+            },
+          },
+        ],
+        source_report:
+          "<script>unsafeContent()</script> Original report preserved.",
+        image_checks: [],
+      },
+    };
+    snapshot.sources.docker = {
+      status: "healthy",
+      data: {
+        containers: [],
+        images: [],
+        storage: {},
+        worker_history: [
+          {
+            id: "example",
+            name: "previous-ci-worker",
+            image: "example:ci",
+            state: "no_longer_visible",
+            status: "Job outcome unknown",
+            first_seen: 1,
+            last_seen: 2,
+            cpu_peak: 80,
+            memory_peak: 1024,
+          },
+        ],
+      },
+    };
+    await route.fulfill({ json: snapshot });
+  });
+  await signIn(page);
+  await page
+    .getByRole("button", { name: "Survey & benchmarks", exact: true })
+    .click();
+  await expect(
+    page.getByText("Example runner survey", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("prepared", { exact: true })).toBeVisible();
+  await expect(page.getByText("verified", { exact: true })).toBeVisible();
+  await page.getByLabel("Recorded pipeline").selectOption("1");
+  await expect(
+    page.getByRole("heading", { name: "Recorded jobs · #101" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Individual job records were not included", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.getByText("Read the complete original survey").click();
+  await expect(page.locator(".source-report")).toContainText(
+    "<script>unsafeContent()</script>",
+  );
+  await page.getByRole("button", { name: "Runner stack", exact: true }).click();
+  await expect(
+    page.getByRole("cell").filter({ hasText: "previous-ci-worker" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Job outcome unknown", { exact: true }),
+  ).toBeVisible();
 });

@@ -113,3 +113,12 @@ docker-restart: ## Restart the running app without changing its deployment mode
 
 docker-backup: ## Back up container SQLite data inside its persistent volume
 	$(COMPOSE) exec opsdeck python -m deploy.backup --source /data/opsdeck.sqlite --output /data/backups/opsdeck-$$(date -u +%Y%m%dT%H%M%S).sqlite
+
+.PHONY: import-survey docker-import-survey
+import-survey: ## Validate/import a private survey: make import-survey SURVEY=/path/survey.json
+	@test -n "$(SURVEY)" || { echo 'Set SURVEY to the private archive path.' >&2; exit 1; }
+	$(VENV) -m deploy.import_findings '$(SURVEY)'
+
+docker-import-survey: ## Validate/import into the running container's persistent volume
+	@test -n "$(SURVEY)" || { echo 'Set SURVEY to the private archive path.' >&2; exit 1; }
+	$(COMPOSE) exec -T opsdeck python -m deploy.import_findings - --output /data/findings.json < '$(SURVEY)'

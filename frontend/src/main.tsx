@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
+  ClipboardList,
   ArrowDown,
   ArrowUp,
   Box,
@@ -54,12 +55,18 @@ import {
   type Source,
 } from "./api";
 import "./styles.css";
+import {
+  SurveyPage,
+  RunnerInventory,
+  RecordedOptimizations,
+} from "./RunnerStack";
 
 const pages = [
   { id: "overview", title: "Overview", icon: LayoutDashboard },
   { id: "host", title: "Host & hardware", icon: Server },
   { id: "docker", title: "Docker", icon: Box },
-  { id: "gitlab", title: "Pipelines & runners", icon: GitBranch },
+  { id: "gitlab", title: "Runner stack", icon: GitBranch },
+  { id: "survey", title: "Survey & benchmarks", icon: ClipboardList },
   { id: "optimization", title: "Optimization", icon: Zap },
   { id: "activity", title: "Activity & audit", icon: Activity },
   { id: "connections", title: "Connections", icon: Settings },
@@ -468,19 +475,19 @@ function App() {
       <div>
         <div className="stat-label">
           <GitBranch size={17} />
-          CI queue
+          CI containers
         </div>
         <strong>
-          {ciKnown ? jobs.filter((j) => j.status === "pending").length : "—"}
-          <span className="stat-unit"> jobs</span>
+          {sources.docker?.status === "healthy"
+            ? (docker?.ci_running ?? 0)
+            : "—"}
+          <span className="stat-unit"> running</span>
         </strong>
         <small>
-          {ciKnown
-            ? `${jobs.filter((j) => j.status === "running").length} running in sampled pipelines`
-            : "Connect GitLab to see the queue"}
+          Build, helper, and service containers identified on this host
         </small>
         <button className="text-button" onClick={() => setPage("gitlab")}>
-          View pipelines <ChevronRight size={14} />
+          View runner stack <ChevronRight size={14} />
         </button>
       </div>
     </div>
@@ -704,6 +711,7 @@ function App() {
                                 runner: "GitLab runner",
                                 gitlab: "GitLab projects",
                                 services: "System services",
+                                findings: "Survey archive",
                               } as Record<string, string>
                             )[key]
                           }
@@ -1240,249 +1248,268 @@ function App() {
               </div>
             </>
           )}
+          {page === "survey" && <SurveyPage source={sources.findings} />}
+          {page === "optimization" && (
+            <RecordedOptimizations archive={sources.findings?.data} />
+          )}
           {page === "gitlab" && (
             <>
-              <SourceNotice source={sources.gitlab} name="GitLab" />
-              <SourceNotice source={sources.runner} name="Runner" />
-              <div className="summary-row">
-                <div>
-                  <GitBranch />
-                  <strong>
-                    {ciKnown
-                      ? pipelines.filter((p) => p.status === "running").length
-                      : "—"}
-                  </strong>
-                  <span>Running pipelines</span>
-                </div>
-                <div>
-                  <Activity />
-                  <strong>
-                    {ciKnown
-                      ? jobs.filter((j) => j.status === "pending").length
-                      : "—"}
-                  </strong>
-                  <span>Pending jobs in sample</span>
-                </div>
-                <div>
-                  <Cpu />
-                  <strong>
-                    {runnerMetrics.gitlab_runner_concurrent ??
-                      sources.runner?.data?.facts?.concurrent ??
-                      "—"}
-                  </strong>
-                  <span>Configured runner slots</span>
-                </div>
-                <div>
-                  <Server />
-                  <strong>{gitlab?.projects?.length ?? "—"}</strong>
-                  <span>Connected projects</span>
-                </div>
-              </div>
-              <Panel
-                title="Recent & active pipelines"
-                note="GitLab is read-only"
-              >
-                {pipelines.length ? (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Pipeline / project</th>
-                          <th>Branch</th>
-                          <th>Status</th>
-                          <th>Duration</th>
-                          <th>Queue duration</th>
-                          <th>Created</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pipelines.map((p) => (
-                          <tr key={`${p.project}-${p.id}`}>
-                            <td>
-                              <a
-                                href={safeUrl(p.url)}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                #{p.id}
-                                <ExternalLink size={12} />
-                              </a>
-                              <small>{p.project}</small>
-                            </td>
-                            <td>{p.ref}</td>
-                            <td>
-                              <Badge value={p.status} />
-                            </td>
-                            <td>{duration(p.duration)}</td>
-                            <td>{duration(p.queued_duration)}</td>
-                            <td>
-                              {p.created_at
-                                ? new Date(p.created_at).toLocaleString()
-                                : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              <SourceNotice source={sources.docker} name="Docker" />
+              <SourceNotice source={sources.runner} name="Runner telemetry" />
+              <RunnerInventory
+                docker={docker}
+                archive={sources.findings?.data}
+                host={host}
+              />
+            </>
+          )}
+          {page === "gitlab" &&
+            sources.gitlab?.status !== "not_configured" &&
+            sources.gitlab?.status !== "collecting" && (
+              <>
+                <SourceNotice source={sources.gitlab} name="GitLab" />
+                <SourceNotice source={sources.runner} name="Runner" />
+                <div className="summary-row">
+                  <div>
+                    <GitBranch />
+                    <strong>
+                      {ciKnown
+                        ? pipelines.filter((p) => p.status === "running").length
+                        : "—"}
+                    </strong>
+                    <span>Running pipelines</span>
                   </div>
-                ) : (
-                  <Empty
-                    title="Connect your projects"
-                    text="Configure a read_api GitLab token and project IDs on the server. No GitLab credentials are stored in this browser."
-                  />
-                )}
-              </Panel>
-              <Panel title="Jobs in selected pipelines">
-                <div className="table-toolbar">
-                  <label className="search">
-                    <Search size={16} />
-                    <input
-                      aria-label="Search jobs"
-                      placeholder="Search jobs or projects"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                    />
-                  </label>
-                  <select
-                    aria-label="Job status"
-                    value={jobFilter}
-                    onChange={(e) => setJobFilter(e.target.value)}
-                  >
-                    <option value="all">All statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="running">Running</option>
-                    <option value="failed">Failed</option>
-                    <option value="success">Success</option>
-                  </select>
+                  <div>
+                    <Activity />
+                    <strong>
+                      {ciKnown
+                        ? jobs.filter((j) => j.status === "pending").length
+                        : "—"}
+                    </strong>
+                    <span>Pending jobs in sample</span>
+                  </div>
+                  <div>
+                    <Cpu />
+                    <strong>
+                      {runnerMetrics.gitlab_runner_concurrent ??
+                        sources.runner?.data?.facts?.concurrent ??
+                        "—"}
+                    </strong>
+                    <span>Configured runner slots</span>
+                  </div>
+                  <div>
+                    <Server />
+                    <strong>{gitlab?.projects?.length ?? "—"}</strong>
+                    <span>Connected projects</span>
+                  </div>
                 </div>
-                {jobs.length ? (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Job</th>
-                          <th>Pipeline</th>
-                          <th>Status</th>
-                          <th>Execution</th>
-                          <th>Queue</th>
-                          <th>Runner</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {jobs
-                          .filter(
-                            (j) =>
-                              `${j.name} ${j.project}`
-                                .toLowerCase()
-                                .includes(query.toLowerCase()) &&
-                              (jobFilter === "all" || j.status === jobFilter),
-                          )
-                          .map((j) => (
-                            <tr key={`${j.project}-${j.id}`}>
-                              <td>
-                                <a
-                                  href={safeUrl(j.url)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {j.name}
-                                  <ExternalLink size={12} />
-                                </a>
-                                <small>{j.project}</small>
-                              </td>
-                              <td>#{j.pipeline}</td>
-                              <td>
-                                <Badge value={j.status} />
-                              </td>
-                              <td>{duration(j.duration)}</td>
-                              <td>{duration(j.queued_duration)}</td>
-                              <td>{j.runner || "Unassigned"}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <Empty
-                    title="No jobs collected"
-                    text="Jobs are collected from active pipelines and the newest pipeline per configured project."
-                  />
-                )}
-                <p className="panel-description">
-                  {gitlab?.scope ||
-                    "Recent and active pipelines are sampled every 60 seconds."}{" "}
-                  Queue and duration fields remain empty when GitLab does not
-                  provide them.
-                </p>
-              </Panel>
-              <Panel title="Runner configuration & telemetry">
-                {sources.runner?.data?.facts?.runners?.length ? (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Registration</th>
-                          <th>Executor</th>
-                          <th>Job limit</th>
-                          <th>Request concurrency</th>
-                          <th>CPU quota</th>
-                          <th>Memory ceiling</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sources.runner.data.facts.runners.map((r: any) => (
-                          <tr key={r.name}>
-                            <td>{r.name}</td>
-                            <td>{r.executor}</td>
-                            <td>{r.limit === 0 ? "Global limit" : r.limit}</td>
-                            <td>{r.request_concurrency}</td>
-                            <td>{r.cpus ?? "Not set"}</td>
-                            <td>{r.memory ?? "Not set"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="panel-description">
-                    Export sanitized runner facts with the administrator helper
-                    to inspect each registration's worker budget.
-                  </p>
-                )}
-                {Object.keys(runnerMetrics).length > 0 && (
-                  <details className="runner-details">
-                    <summary>Inspect runner measurements</summary>
+                <Panel
+                  title="Recent & active pipelines"
+                  note="GitLab is read-only"
+                >
+                  {pipelines.length ? (
                     <div className="table-wrap">
                       <table>
                         <thead>
                           <tr>
-                            <th>Measurement</th>
-                            <th>Value</th>
+                            <th>Pipeline / project</th>
+                            <th>Branch</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th>Queue duration</th>
+                            <th>Created</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {Object.entries(runnerMetrics)
-                            .filter(([k]) => !k.endsWith("_bucket"))
-                            .slice(0, 50)
-                            .map(([key, value]) => (
-                              <tr key={key}>
-                                <td>{key}</td>
-                                <td>{Number(value).toLocaleString()}</td>
+                          {pipelines.map((p) => (
+                            <tr key={`${p.project}-${p.id}`}>
+                              <td>
+                                <a
+                                  href={safeUrl(p.url)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  #{p.id}
+                                  <ExternalLink size={12} />
+                                </a>
+                                <small>{p.project}</small>
+                              </td>
+                              <td>{p.ref}</td>
+                              <td>
+                                <Badge value={p.status} />
+                              </td>
+                              <td>{duration(p.duration)}</td>
+                              <td>{duration(p.queued_duration)}</td>
+                              <td>
+                                {p.created_at
+                                  ? new Date(p.created_at).toLocaleString()
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <Empty
+                      title="Connect your projects"
+                      text="Configure a read_api GitLab token and project IDs on the server. No GitLab credentials are stored in this browser."
+                    />
+                  )}
+                </Panel>
+                <Panel title="Jobs in selected pipelines">
+                  <div className="table-toolbar">
+                    <label className="search">
+                      <Search size={16} />
+                      <input
+                        aria-label="Search jobs"
+                        placeholder="Search jobs or projects"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                      />
+                    </label>
+                    <select
+                      aria-label="Job status"
+                      value={jobFilter}
+                      onChange={(e) => setJobFilter(e.target.value)}
+                    >
+                      <option value="all">All statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="running">Running</option>
+                      <option value="failed">Failed</option>
+                      <option value="success">Success</option>
+                    </select>
+                  </div>
+                  {jobs.length ? (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Job</th>
+                            <th>Pipeline</th>
+                            <th>Status</th>
+                            <th>Execution</th>
+                            <th>Queue</th>
+                            <th>Runner</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {jobs
+                            .filter(
+                              (j) =>
+                                `${j.name} ${j.project}`
+                                  .toLowerCase()
+                                  .includes(query.toLowerCase()) &&
+                                (jobFilter === "all" || j.status === jobFilter),
+                            )
+                            .map((j) => (
+                              <tr key={`${j.project}-${j.id}`}>
+                                <td>
+                                  <a
+                                    href={safeUrl(j.url)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {j.name}
+                                    <ExternalLink size={12} />
+                                  </a>
+                                  <small>{j.project}</small>
+                                </td>
+                                <td>#{j.pipeline}</td>
+                                <td>
+                                  <Badge value={j.status} />
+                                </td>
+                                <td>{duration(j.duration)}</td>
+                                <td>{duration(j.queued_duration)}</td>
+                                <td>{j.runner || "Unassigned"}</td>
                               </tr>
                             ))}
                         </tbody>
                       </table>
                     </div>
+                  ) : (
+                    <Empty
+                      title="No jobs collected"
+                      text="Jobs are collected from active pipelines and the newest pipeline per configured project."
+                    />
+                  )}
+                  <p className="panel-description">
+                    {gitlab?.scope ||
+                      "Recent and active pipelines are sampled every 60 seconds."}{" "}
+                    Queue and duration fields remain empty when GitLab does not
+                    provide them.
+                  </p>
+                </Panel>
+                <Panel title="Runner configuration & telemetry">
+                  {sources.runner?.data?.facts?.runners?.length ? (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Registration</th>
+                            <th>Executor</th>
+                            <th>Job limit</th>
+                            <th>Request concurrency</th>
+                            <th>CPU quota</th>
+                            <th>Memory ceiling</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sources.runner.data.facts.runners.map((r: any) => (
+                            <tr key={r.name}>
+                              <td>{r.name}</td>
+                              <td>{r.executor}</td>
+                              <td>
+                                {r.limit === 0 ? "Global limit" : r.limit}
+                              </td>
+                              <td>{r.request_concurrency}</td>
+                              <td>{r.cpus ?? "Not set"}</td>
+                              <td>{r.memory ?? "Not set"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
                     <p className="panel-description">
-                      Series are summed across runner labels. Counters are
-                      cumulative; these are not rates or queue latency
-                      estimates.
+                      Export sanitized runner facts with the administrator
+                      helper to inspect each registration's worker budget.
                     </p>
-                  </details>
-                )}
-              </Panel>
-            </>
-          )}
+                  )}
+                  {Object.keys(runnerMetrics).length > 0 && (
+                    <details className="runner-details">
+                      <summary>Inspect runner measurements</summary>
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Measurement</th>
+                              <th>Value</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(runnerMetrics)
+                              .filter(([k]) => !k.endsWith("_bucket"))
+                              .slice(0, 50)
+                              .map(([key, value]) => (
+                                <tr key={key}>
+                                  <td>{key}</td>
+                                  <td>{Number(value).toLocaleString()}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="panel-description">
+                        Series are summed across runner labels. Counters are
+                        cumulative; these are not rates or queue latency
+                        estimates.
+                      </p>
+                    </details>
+                  )}
+                </Panel>
+              </>
+            )}
           {page === "optimization" && (
             <>
               <div className="optimization-intro">
@@ -1612,7 +1639,11 @@ function App() {
                             ? "GitLab runner"
                             : key === "docker"
                               ? "Docker engine"
-                              : "Host resources"
+                              : key === "findings"
+                                ? "Survey archive"
+                                : key === "services"
+                                  ? "System services"
+                                  : "Host resources"
                     }
                     note={<Badge value={s.stale ? "stale" : s.status} />}
                   >

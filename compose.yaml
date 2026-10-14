@@ -14,6 +14,7 @@ services:
       OPSDECK_HOST_ROOT: ''
       OPSDECK_PROCFS_PATH: /proc
       OPSDECK_RUNNER_FACTS: /data/runner-facts.json
+      OPSDECK_FINDINGS_PATH: /data/findings.json
     ports:
       - '${OPSDECK_PUBLISH_IP:-127.0.0.1}:${OPSDECK_PORT:-8080}:8080'
     volumes:

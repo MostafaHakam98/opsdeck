@@ -133,6 +133,12 @@ class HostCollector:
         except (AttributeError, OSError):
             pass
         freq = psutil.cpu_freq()
+        preferences = {}
+        for key, filename in (("epp", "energy_performance_preference"), ("governor", "scaling_governor"), ("driver", "scaling_driver")):
+            try:
+                preferences[key] = filesystem_path(self.host_root, "/sys/devices/system/cpu/cpu0/cpufreq/" + filename).read_text().strip()
+            except OSError:
+                preferences[key] = None
         processes = []
         for proc in psutil.process_iter(["pid", "name", "memory_info", "cpu_percent"]):
             try:
@@ -153,7 +159,7 @@ class HostCollector:
                 operating_system = "Linux / " + platform.release()
         return source({"hostname": hostname, "os": operating_system, "scope": self.scope, "boot_time": psutil.boot_time(),
             "cpu": {"percent": psutil.cpu_percent(interval=.1), "cores": psutil.cpu_count(logical=False), "threads": psutil.cpu_count(),
-                "load": list(os.getloadavg()), "mhz": freq.current if freq else None},
+                "load": list(os.getloadavg()), "mhz": freq.current if freq else None, **preferences},
             "memory": {"total": vm.total, "available": vm.available, "used": vm.total - vm.available, "percent": vm.percent,
                 "cached": getattr(vm, "cached", None), "swap_total": swap.total, "swap_used": swap.used},
             "volumes": volumes, "disks": disk_rates, "inventory": self.inventory, "network": networks,
@@ -213,6 +219,8 @@ class DockerCollector:
         self.previous = {}
         self.storage = None
         self.storage_at = 0
+        self.images = []
+        self.images_at = 0
 
     def collect(self):
         try:
@@ -247,12 +255,19 @@ class DockerCollector:
                         memory = max(0, m.get("usage", 0) - m.get("stats", {}).get("inactive_file", 0))
                         limit = m.get("limit")
                     labels = c.get("Labels") or {}
+                    ci_fields = {"job_id": "job.id", "job_name": "job.name", "project_id": "job.project.id", "project_path": "job.project.path", "runner_id": "runner.id", "role": "type"}
+                    metadata = {key: labels["com.gitlab.gitlab-runner." + field] for key, field in ci_fields.items() if "com.gitlab.gitlab-runner." + field in labels}
                     rows.append({"id": c["Id"], "name": (c.get("Names") or [c["Id"][:12]])[0].lstrip("/"), "image": c["Image"],
                         "state": c["State"], "status": c["Status"], "created": c["Created"], "cpu_percent": cpu,
                         "memory_bytes": memory, "memory_limit": limit, "managed": labels.get("opsdeck.managed") == "true",
-                        "ci": any(k.startswith("com.gitlab.gitlab-runner") for k in labels) or any(n.lstrip("/").startswith("runner-") for n in c.get("Names", [])),
+                        "ci": any(k.startswith("com.gitlab.gitlab-runner") for k in labels) or any(n.lstrip("/").startswith("runner-") for n in c.get("Names", [])), "ci_metadata": metadata,
                         "ports": [{"private": p.get("PrivatePort"), "public": p.get("PublicPort"), "type": p.get("Type")} for p in c.get("Ports", [])]})
                 self.previous = {k: v for k, v in self.previous.items() if k in current_stats}
+                if not self.images or time.monotonic() - self.images_at > 30:
+                    image_data = client.api.images(all=True)
+                    self.images = [{"id": image["Id"], "tags": image.get("RepoTags") or [], "size_bytes": image.get("Size"),
+                        "created": image.get("Created"), "referencing_containers": sum(c.get("ImageID") == image["Id"] for c in containers)} for image in image_data[:500]]
+                    self.images_at = time.monotonic()
                 storage_error = None
                 if time.monotonic() - self.storage_at > 300 or self.storage is None:
                     try:
@@ -263,13 +278,18 @@ class DockerCollector:
                         self.storage = {"layers_bytes": usage.get("LayersSize"), "images_count": len(images), "volumes_count": len(volumes),
                             "build_cache_bytes": sum(x.get("Size", 0) for x in build),
                             "build_cache_reclaimable_bytes": sum(x.get("Size", 0) for x in build if not x.get("InUse")),
-                            "updated_at": time.time()}
+                            "updated_at": time.time(),
+                            "volumes": [{"name": v.get("Name"), "driver": v.get("Driver"), "mountpoint": v.get("Mountpoint"),
+                                "size_bytes": (v.get("UsageData") or {}).get("Size") if (v.get("UsageData") or {}).get("Size", -1) >= 0 else None,
+                                "references": (v.get("UsageData") or {}).get("RefCount")} for v in volumes[:200]]}
                         self.storage_at = time.monotonic()
                     except docker.errors.DockerException:
                         storage_error = "Docker disk-usage query unavailable"
                 return source({"version": info.get("ServerVersion"), "storage_driver": info.get("Driver"), "root": info.get("DockerRootDir"),
                     "containers": rows, "total_containers": len(containers), "stats_limit": 64, "truncated": len(containers) > 200,
-                    "storage": self.storage, "storage_error": storage_error})
+                    "storage": self.storage, "storage_error": storage_error, "images": self.images,
+                    "images_updated_at": time.time() - max(0, time.monotonic() - self.images_at),
+                    "ci_running": sum(c["ci"] and c["state"] == "running" for c in rows)})
             finally:
                 client.close()
         except (docker.errors.DockerException, OSError) as exc:

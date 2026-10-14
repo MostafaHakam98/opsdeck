@@ -20,6 +20,7 @@ class Settings:
     host_root: str = field(default_factory=lambda: os.getenv("OPSDECK_HOST_ROOT", "").rstrip("/"))
     procfs_path: str = field(default_factory=lambda: os.getenv("OPSDECK_PROCFS_PATH", os.getenv("OPSDECK_HOST_ROOT", "").rstrip("/") + "/proc"))
     scope: str = field(default_factory=lambda: os.getenv("OPSDECK_SCOPE", "native"))
+    findings_path: str = field(default_factory=lambda: os.getenv("OPSDECK_FINDINGS_PATH", "./data/findings.json"))
     static: Path = field(default_factory=lambda: Path(__file__).resolve().parents[1] / "frontend" / "dist")
 
     def validate(self):

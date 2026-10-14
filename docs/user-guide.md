@@ -10,7 +10,7 @@ A dash is an unavailable measurement, not zero. Check integration coverage befor
 
 ## Overview
 
-The resource strip shows CPU use, memory use, the first GPU's utilization, and pending jobs from the configured GitLab sample. **Capacity over time** supports hour, day, week, and month views. Charts show bucket averages; the history API also retains peak values.
+The resource strip shows CPU use, memory use, the first GPU's utilization, and currently running CI containers identified on the host. **Capacity over time** supports hour, day, week, and month views. Charts show bucket averages; the history API also retains peak values.
 
 **Needs attention** summarizes active thresholds and unavailable telemetry. **Integration coverage** opens Connections. **Storage headroom** shows mounted filesystem capacity; **Export snapshot** downloads a JSON snapshot without server integration credentials.
 
@@ -32,7 +32,15 @@ Search containers by name/image and filter by state. Inspect state, Docker healt
 
 Image-layer and build-cache measurements come from Docker's disk usage API and are cached for five minutes. A first CPU sample remains empty. The UI does not prune caches or images automatically.
 
-## Pipelines & runners
+## Runner stack
+
+This page reads live CI containers, local image tags and revisions, image sizes, container references, Docker cache volumes, and their backing paths directly from the node. Search the catalog by tag or toolchain profile. Image aliases share layers; summing displayed image sizes double-counts storage. CI roles and job IDs are shown when Docker labels provide them. Missing labels stay explicit.
+
+## Survey & benchmarks
+
+Imported private surveys retain measured pipeline outcomes, timing comparisons, job details, changes and follow-ups, and the complete original report with its hash. Current host checks appear independently of recorded statuses. See [Runner surveys](surveys.md) for import and persistence instructions. No GitLab token is required for these views.
+
+## Optional GitLab timing view
 
 Recent and active pipelines show branch, status, duration, and queued duration when the GitLab version supplies those fields. Jobs include their execution duration, queue duration, and assigned runner. Search job names/projects or filter pending, running, failed, and successful jobs.
 

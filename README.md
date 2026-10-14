@@ -21,9 +21,10 @@ For NVIDIA telemetry, configure the node's NVIDIA Container Toolkit and run `mak
 
 - CPU, cores/threads, load, memory, swap, page cache, pressure stalls, temperatures, and top processes.
 - Filesystem bytes/inodes, physical disks, read/write throughput, IOPS, latency, and network interfaces.
-- Docker container state, CPU/RAM, image layers, and build-cache usage.
+- Docker container state, CPU/RAM, retained CI worker observations, image tags, cache volumes, and build-cache usage.
 - NVIDIA utilization, VRAM, temperature, power, and driver version.
-- GitLab pipeline/job timings, queue durations, runner assignment, and runner telemetry.
+- Private survey pipeline outcomes, job timing comparisons, complete source evidence, and optimization follow-ups without a GitLab connection.
+- Runner telemetry and optional read-only GitLab pipeline/job integration.
 - Retained charts, integration freshness, threshold alerts, optimization evidence, and action history.
 
 Missing integrations stay explicit. The dashboard labels its collection scope. GitLab is read-only; container stop/restart actions are disabled by default and require an opt-in label, typed confirmation, current-state validation, and a one-use preview.
@@ -56,6 +57,7 @@ One application instance monitors one node. History lives in a persistent named 
 | [Getting started](docs/getting-started.md) | Clone, first launch, and daily commands |
 | [User guide](docs/user-guide.md) | Every page, chart, threshold, and action |
 | [Configuration](docs/configuration.md) | Environment reference and integrations |
+| [Runner surveys](docs/surveys.md) | Private benchmark imports, recorded evidence, and current optimization checks |
 | [Deployment](docs/deployment.md) | Docker, Compose, GPU, native, offline, and cluster guidance |
 | [Operations](docs/operations.md) | Health, logs, backup/restore, updates, and optimization |
 | [Architecture](docs/architecture.md) | Data flow, API, permissions, and limits |

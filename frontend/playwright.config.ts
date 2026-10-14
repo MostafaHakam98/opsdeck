@@ -18,6 +18,7 @@ export default defineConfig({
       OPSDECK_BIND: "127.0.0.1",
       OPSDECK_PORT: "8082",
       OPSDECK_DB: "/tmp/opsdeck-e2e.sqlite",
+      OPSDECK_FINDINGS_PATH: "/tmp/opsdeck-e2e-no-private-survey.json",
       DOCKER_HOST: "unix:///tmp/opsdeck-missing.sock",
       GITLAB_URL: "",
       GITLAB_TOKEN: "",

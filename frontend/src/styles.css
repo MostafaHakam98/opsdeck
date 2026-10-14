@@ -692,6 +692,30 @@ tbody tr:hover {
   padding: 16px 21px;
   font-size: 12px;
 }
+.recorded-notes {
+  padding: 15px 22px;
+  font-size: 12px;
+  color: #526a86;
+}
+.recorded-notes p {
+  padding: 10px 0;
+  border-bottom: 1px solid #e0e7ef;
+}
+.provenance {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  margin: 10px 0;
+}
+.source-report {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 650px;
+  overflow: auto;
+  background: #f7f9fc;
+  padding: 18px;
+  font-size: 11px;
+  line-height: 1.7;
+}
 .runner-details summary {
   cursor: pointer;
   color: #3169c6;

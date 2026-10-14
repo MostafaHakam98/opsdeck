@@ -12,6 +12,7 @@ Native mode loads `.env` without evaluating shell code. Whitespace around `=` an
 | `OPSDECK_BIND` | `127.0.0.1` native | Listen address; host Compose honors it |
 | `OPSDECK_PORT` | `8080` | Native/host port; portable Compose publishes this external port |
 | `OPSDECK_DB` | `./data/opsdeck.sqlite` native | SQLite path; Compose sets `/data/opsdeck.sqlite` |
+| `OPSDECK_FINDINGS_PATH` | `./data/findings.json` native | Private survey archive; Compose sets `/data/findings.json`; reloads every 30 seconds |
 | `OPSDECK_SAMPLE_SECONDS` | `10`, minimum `5` | Host/history sampling interval |
 | `OPSDECK_RETENTION_DAYS` | `30`, minimum `1` | Metrics and threshold-event retention |
 | `OPSDECK_ACTIONS` | `false` | Opt-in stop/restart operations |
