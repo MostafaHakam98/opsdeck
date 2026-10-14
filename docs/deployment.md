@@ -58,6 +58,19 @@ docker run --name opsdeck-preview --init --read-only \
 
 To adapt full node monitoring, use the tested Compose host override rather than assembling host-access flags piecemeal.
 
+### Hosts that deny container DBus queries
+
+Some host policies deny system-bus access to the non-root container. Run the standard-library exporter from the node's ordinary deployment account and schedule it once per minute with that account's cron or an administrator-managed timer:
+
+```bash
+cd /path/to/opsdeck
+python3 -m deploy.export_services --output data/service-status.json
+# Example crontab entry (replace the absolute project path):
+# * * * * * cd /path/to/opsdeck && /usr/bin/python3 -m deploy.export_services --output data/service-status.json
+```
+
+Set `OPSDECK_SERVICES_FILE=/host/path/to/opsdeck/data/service-status.json` in the host deployment's `.env`, then recreate the app container. The exporter writes selected health, CPU, and memory fields atomically; it exports no service configuration or environment. Its output is mode 644 so the non-root container can read it. The reader rejects missing units, invalid states, and snapshots older than two minutes. The scheduler must run after reboot; inspect its host service. This affects only service collection.
+
 ## Private remote access
 
 For host/native mode, set `OPSDECK_BIND` to the node's Tailscale address and restart. The host-mode health check follows that configured address. For portable mode, set `OPSDECK_PUBLISH_IP` to the desired private interface; the process still listens on all interfaces inside the container.

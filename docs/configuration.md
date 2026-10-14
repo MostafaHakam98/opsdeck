@@ -18,6 +18,7 @@ Native mode loads `.env` without evaluating shell code. Whitespace around `=` an
 | `OPSDECK_ACTIONS` | `false` | Opt-in stop/restart operations |
 | `OPSDECK_ENV_FILE` | `.env` native | Alternate launcher config file; image uses `/data/config.env` |
 | `OPSDECK_SERVICES` | Docker, runner, Tailscale units | Up to 12 comma-separated `.service` unit names |
+| `OPSDECK_SERVICES_FILE` | Empty | Optional sanitized native service snapshot, instead of direct DBus reads; see deployment guide |
 
 The application keeps no user-account database. The shared operator token protects measurements and actions. Source code can be cloned anonymously from the public repository.
 

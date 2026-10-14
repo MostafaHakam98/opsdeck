@@ -3,6 +3,7 @@ import concurrent.futures
 import csv
 import io
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -172,6 +173,29 @@ def services_collect(settings):
     if not names:
         return source([], "not_configured", "Set OPSDECK_SERVICES to the service units to monitor")
     try:
+        if settings.services_file:
+            with Path(settings.services_file).open("rb") as file:
+                raw = file.read(65537)
+            if len(raw) > 65536:
+                raise ValueError("Service snapshot exceeds limit")
+            snapshot = json.loads(raw)
+            captured = float(snapshot["updated_at"])
+            if not math.isfinite(captured) or not -5 <= time.time() - captured <= 120:
+                return source(status="unavailable", message="Host service snapshot is stale; check the scheduled exporter")
+            rows = []
+            for row in snapshot["services"]:
+                if row["name"] not in names:
+                    continue
+                if row["load"] not in ("loaded", "not-found", "masked", "error", "merged", "stub") or row["state"] not in ("active", "inactive", "failed", "activating", "deactivating", "reloading", "maintenance", "refreshing"):
+                    raise ValueError("Invalid service state")
+                item = {key: row.get(key) for key in ("name", "load", "state", "substate", "exit_code", "memory_bytes", "cpu_seconds")}
+                for key in ("exit_code", "memory_bytes", "cpu_seconds"):
+                    if item[key] is not None and (not isinstance(item[key], (int, float)) or not math.isfinite(item[key]) or item[key] < 0):
+                        raise ValueError("Invalid service measurement")
+                rows.append(item)
+            if {row["name"] for row in rows} != set(names):
+                raise ValueError("Incomplete service snapshot")
+            return {**source(rows), "updated_at": captured, "collection_method": "host_export"}
         env = None
         if settings.host_root:
             bus = Path(settings.host_root, "run", "dbus", "system_bus_socket")
@@ -190,7 +214,7 @@ def services_collect(settings):
                     "substate": values.get("SubState"), "exit_code": numeric("ExecMainStatus"),
                     "memory_bytes": numeric("MemoryCurrent"), "cpu_seconds": numeric("CPUUsageNSec") / 1e9 if numeric("CPUUsageNSec") is not None else None})
         return source(rows)
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
         return failure(exc, "Systemd service status unavailable on this host")
 
 

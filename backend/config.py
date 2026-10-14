@@ -17,6 +17,7 @@ class Settings:
     runner_url: str = field(default_factory=lambda: os.getenv("RUNNER_METRICS_URL", "http://127.0.0.1:9252/metrics"))
     runner_facts: str = field(default_factory=lambda: os.getenv("OPSDECK_RUNNER_FACTS", "./data/runner-facts.json"))
     services: list[str] = field(default_factory=lambda: [s.strip() for s in os.getenv("OPSDECK_SERVICES", "docker.service,gitlab-runner.service,tailscaled.service").split(",") if s.strip()][:12])
+    services_file: str = field(default_factory=lambda: os.getenv("OPSDECK_SERVICES_FILE", ""))
     host_root: str = field(default_factory=lambda: os.getenv("OPSDECK_HOST_ROOT", "").rstrip("/"))
     procfs_path: str = field(default_factory=lambda: os.getenv("OPSDECK_PROCFS_PATH", os.getenv("OPSDECK_HOST_ROOT", "").rstrip("/") + "/proc"))
     scope: str = field(default_factory=lambda: os.getenv("OPSDECK_SCOPE", "native"))
