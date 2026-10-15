@@ -60,6 +60,18 @@ def test_history_retention_buckets_and_audit_survival(tmp_path):
         assert db.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 3
 
 
+def test_minute_host_export_stays_fresh_until_export_deadline(app):
+    value = {**source([]), "updated_at": time.time() - 90}
+    with TestClient(app) as client:
+        for method, stale in (("host_export", False), ("native", True)):
+            app.state.snapshot["services"] = {**value, "collection_method": method}
+            result = client.get("/api/snapshot", headers={"Authorization": "Bearer " + TOKEN})
+            assert result.json()["sources"]["services"]["stale"] is stale
+        app.state.snapshot["services"]["updated_at"] = time.time() - 125
+        app.state.snapshot["services"]["collection_method"] = "host_export"
+        assert client.get("/api/snapshot", headers={"Authorization": "Bearer " + TOKEN}).json()["sources"]["services"]["stale"]
+
+
 class FakeContainer:
     id = "a" * 64
     name = "example-service"

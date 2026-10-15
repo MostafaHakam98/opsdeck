@@ -317,3 +317,108 @@ test("survey evidence and observed worker history remain distinct", async ({
     page.getByText("Job outcome unknown", { exact: true }),
   ).toBeVisible();
 });
+
+test("runner metrics and worker states work without GitLab integration", async ({
+  page,
+  request,
+}) => {
+  const template = await (
+    await request.get("/api/snapshot", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json();
+  let available = false;
+  await page.route("**/api/snapshot", async (route) => {
+    const snapshot = structuredClone(template);
+    snapshot.sources.gitlab = { status: "not_configured", data: null };
+    snapshot.sources.services = {
+      status: "healthy",
+      stale: false,
+      data: [
+        { name: "gitlab-runner.service", state: "active", substate: "running" },
+      ],
+    };
+    snapshot.sources.runner = {
+      status: available ? "healthy" : "unavailable",
+      stale: false,
+      message: "Metrics listener disabled",
+      data: {
+        metrics: available ? { gitlab_runner_concurrent: 16 } : {},
+        facts: {
+          concurrent: 16,
+          updated_at: 1760000000,
+          runners: [
+            {
+              name: "build-registration",
+              executor: "docker",
+              limit: 0,
+              request_concurrency: 4,
+            },
+          ],
+        },
+      },
+    };
+    snapshot.sources.docker = {
+      status: "healthy",
+      data: {
+        ci_running: 0,
+        storage: {},
+        images: [
+          {
+            id: "sha256:" + "a".repeat(64),
+            tags: ["registry.example/toolchain:cuda"],
+          },
+        ],
+        containers: [
+          {
+            id: "b".repeat(64),
+            name: "retained-ci-worker",
+            ci: true,
+            state: "exited",
+            image: "sha256:" + "a".repeat(64),
+          },
+        ],
+        worker_history: [],
+        volumes: [],
+      },
+    };
+    await route.fulfill({ json: snapshot });
+  });
+  await signIn(page);
+  await page.getByRole("button", { name: "Runner stack", exact: true }).click();
+  const telemetry = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Runner service and metrics" }),
+  });
+  await expect(telemetry.getByText("active", { exact: true })).toBeVisible();
+  await expect(
+    telemetry.getByText("Unavailable", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    telemetry.getByText("build-registration", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("retained-ci-worker", { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/No CI containers are running/)).toBeVisible();
+  await page.getByLabel("Worker state", { exact: true }).selectOption("all");
+  await expect(
+    page.getByText("retained-ci-worker", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: /^toolchain:cuda/ }).first(),
+  ).toBeVisible();
+  available = true;
+  await page.reload();
+  await page.getByRole("button", { name: "Runner stack", exact: true }).click();
+  await expect(telemetry.getByText("Available", { exact: true })).toBeVisible();
+  await expect(
+    telemetry.locator("strong").filter({ hasText: /^16$/ }),
+  ).toBeVisible();
+  await expect(telemetry.getByText(/Enable the runner/)).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});

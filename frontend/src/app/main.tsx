@@ -60,6 +60,7 @@ import {
   RunnerInventory,
   RecordedOptimizations,
 } from "../features/runners/RunnerStack";
+import { RunnerTelemetry } from "../features/runners/RunnerTelemetry";
 
 const pages = [
   { id: "overview", title: "Overview", icon: LayoutDashboard },
@@ -727,7 +728,7 @@ function App() {
                                 host: "Host resources",
                                 docker: "Docker engine",
                                 gpu: "NVIDIA GPU",
-                                runner: "GitLab runner",
+                                runner: "Runner metrics",
                                 gitlab: "GitLab projects",
                                 services: "System services",
                                 findings: "Survey archive",
@@ -1274,7 +1275,17 @@ function App() {
           {page === "gitlab" && (
             <>
               <SourceNotice source={sources.docker} name="Docker" />
-              <SourceNotice source={sources.runner} name="Runner telemetry" />
+              <RunnerTelemetry
+                source={sources.runner}
+                service={
+                  sources.services?.status === "healthy" &&
+                  !sources.services?.stale
+                    ? sources.services?.data?.find(
+                        (row: any) => row.name === "gitlab-runner.service",
+                      )
+                    : undefined
+                }
+              />
               <RunnerInventory
                 docker={docker}
                 archive={sources.findings?.data}
@@ -1459,74 +1470,6 @@ function App() {
                     provide them.
                   </p>
                 </Panel>
-                <Panel title="Runner configuration & telemetry">
-                  {sources.runner?.data?.facts?.runners?.length ? (
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Registration</th>
-                            <th>Executor</th>
-                            <th>Job limit</th>
-                            <th>Request concurrency</th>
-                            <th>CPU quota</th>
-                            <th>Memory ceiling</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {sources.runner.data.facts.runners.map((r: any) => (
-                            <tr key={r.name}>
-                              <td>{r.name}</td>
-                              <td>{r.executor}</td>
-                              <td>
-                                {r.limit === 0 ? "Global limit" : r.limit}
-                              </td>
-                              <td>{r.request_concurrency}</td>
-                              <td>{r.cpus ?? "Not set"}</td>
-                              <td>{r.memory ?? "Not set"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="panel-description">
-                      Export sanitized runner facts with the administrator
-                      helper to inspect each registration's worker budget.
-                    </p>
-                  )}
-                  {Object.keys(runnerMetrics).length > 0 && (
-                    <details className="runner-details">
-                      <summary>Inspect runner measurements</summary>
-                      <div className="table-wrap">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Measurement</th>
-                              <th>Value</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(runnerMetrics)
-                              .filter(([k]) => !k.endsWith("_bucket"))
-                              .slice(0, 50)
-                              .map(([key, value]) => (
-                                <tr key={key}>
-                                  <td>{key}</td>
-                                  <td>{Number(value).toLocaleString()}</td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <p className="panel-description">
-                        Series are summed across runner labels. Counters are
-                        cumulative; these are not rates or queue latency
-                        estimates.
-                      </p>
-                    </details>
-                  )}
-                </Panel>
               </>
             )}
           {page === "optimization" && (
@@ -1655,7 +1598,7 @@ function App() {
                         : key === "gitlab"
                           ? "GitLab projects"
                           : key === "runner"
-                            ? "GitLab runner"
+                            ? "Runner metrics"
                             : key === "docker"
                               ? "Docker engine"
                               : key === "findings"

@@ -345,6 +345,8 @@ def runner_collect(settings):
                         metrics[name] = metrics.get(name, 0) + numeric
                 except ValueError:
                     continue
+        if not metrics:
+            return source({"metrics": {}, "facts": facts}, "unavailable", "Endpoint returned no recognized runner metrics; verify RUNNER_METRICS_URL")
         return source({"metrics": metrics, "facts": facts})
     except (httpx.HTTPError, ValueError) as exc:
         return source({"metrics": {}, "facts": facts}, "unavailable", f"Runner metrics endpoint unavailable ({type(exc).__name__}); enable its local metrics listener")

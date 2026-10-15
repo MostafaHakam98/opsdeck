@@ -885,6 +885,9 @@ tbody tr:hover {
   gap: 12px;
   padding: 0 24px 20px;
 }
+.notice code {
+  overflow-wrap: anywhere;
+}
 .speedup-cards > div {
   border: 1px solid var(--line);
   background: #f8fafc;

@@ -40,6 +40,8 @@ Check the node's `nvidia-smi` first. For Docker, configure NVIDIA Container Tool
 
 ## GitLab and runners
 
+For an active runner with **Metrics endpoint: Unavailable**, follow [Runner telemetry](../operations/runner-telemetry.md). Metrics and sanitized configuration facts work without a GitLab API connection. Use **Worker state** to switch between running and retained containers.
+
 - Set HTTPS `GITLAB_URL`, dedicated `read_api` token, and accessible project IDs. The browser receives no integration token.
 - Check project permissions when one project is degraded. Rate/timeouts are surfaced as controlled errors.
 - In portable Docker, localhost points to the container; host mode reaches the node's local runner metrics listener.

@@ -376,7 +376,28 @@ export function RunnerInventory({
   host?: any;
 }) {
   const [query, setQuery] = useState("");
+  const [workerState, setWorkerState] = useState("running");
   const workers = (docker?.containers || []).filter((c: any) => c.ci);
+  const visibleWorkers = workers.filter(
+    (c: any) =>
+      workerState === "all" ||
+      (workerState === "running"
+        ? c.state === "running"
+        : c.state !== "running"),
+  );
+  const stopped = workers.filter((c: any) => c.state !== "running").length;
+  const workerImage = (container: any) => {
+    const image = (docker?.images || []).find(
+      (row: any) => row.id === container.image,
+    );
+    const tag = image?.tags?.[0] || container.image;
+    return {
+      label: tag.startsWith("sha256:")
+        ? `${tag.slice(0, 19)}…`
+        : tag.split("/").pop(),
+      full: tag,
+    };
+  };
   const images = (docker?.images || []).filter((i: any) =>
     i.tags.join(" ").toLowerCase().includes(query.toLowerCase()),
   );
@@ -420,7 +441,23 @@ export function RunnerInventory({
         title="CI workers and helper containers"
         note="Live Docker state"
       >
-        {workers.length ? (
+        <div className="table-toolbar">
+          <label>
+            Worker state{" "}
+            <select
+              aria-label="Worker state"
+              value={workerState}
+              onChange={(event) => setWorkerState(event.target.value)}
+            >
+              <option value="running">Running containers</option>
+              <option value="inactive">Not running ({stopped})</option>
+              <option value="all">
+                All retained containers ({workers.length})
+              </option>
+            </select>
+          </label>
+        </div>
+        {visibleWorkers.length ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -433,14 +470,21 @@ export function RunnerInventory({
                 </tr>
               </thead>
               <tbody>
-                {workers.map((c: any) => (
+                {visibleWorkers.map((c: any) => (
                   <tr key={c.id}>
                     <td>{c.name}</td>
                     <td>
                       <Pill value={c.state} />
                       <small>{c.ci_metadata?.role || "Role not labeled"}</small>
                     </td>
-                    <td>{c.image}</td>
+                    <td title={workerImage(c).full}>
+                      {workerImage(c).label}
+                      <small title={c.image}>
+                        {c.image.startsWith("sha256:")
+                          ? `${c.image.slice(0, 19)}…`
+                          : ""}
+                      </small>
+                    </td>
                     <td>
                       {c.ci_metadata?.job_id || "Not labeled"}
                       <small>
@@ -463,11 +507,17 @@ export function RunnerInventory({
           <Empty
             text={
               docker
-                ? "No CI containers are currently present. This is an idle host, not a missing worker count."
+                ? workerState === "running"
+                  ? `No CI containers are running. ${stopped} non-running containers remain on this host; select All retained containers to inspect them.`
+                  : "No CI containers match this state."
                 : "Docker inventory is unavailable."
             }
           />
         )}
+        <p className="panel-description">
+          CPU/RAM is sampled for running containers. An exited container is not
+          proof that a job passed or failed.
+        </p>
       </Section>
       <Section
         title="Observed CI container history"

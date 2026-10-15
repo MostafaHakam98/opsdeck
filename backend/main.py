@@ -146,7 +146,10 @@ def create_app(settings=None, collect=True, action_factory=None):
         sources = {}
         for key, value in state.items():
             age = now - value["updated_at"] if value.get("updated_at") else None
-            sources[key] = {**value, "age_seconds": age, "stale": age is not None and age > (180 if key == "gitlab" else max(45, settings.interval * 3))}
+            max_age = 180 if key == "gitlab" else max(45, settings.interval * 3)
+            if key == "services" and value.get("collection_method") == "host_export":
+                max_age = 120
+            sources[key] = {**value, "age_seconds": age, "stale": age is not None and age > max_age}
         if sources["findings"].get("data"):
             sources["findings"]["data"] = observations(sources["findings"]["data"], state)
         if sources["docker"].get("data"):

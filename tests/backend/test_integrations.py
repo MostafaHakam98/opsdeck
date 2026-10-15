@@ -41,3 +41,10 @@ def test_runner_facts_remove_nested_secrets_and_metrics_preserve_zero(tmp_path, 
     assert result["data"]["metrics"]["gitlab_runner_jobs"] == 0
     assert result["data"]["facts"]["runners"][0]["limit"] == 4
     assert "secret" not in json.dumps(result)
+
+
+def test_runner_rejects_unrelated_http_success(monkeypatch):
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: httpx.Response(200, text="<html>Dashboard</html>", request=httpx.Request("GET", "http://localhost/metrics")))
+    result = runner_collect(Settings())
+    assert result["status"] == "unavailable"
+    assert "no recognized runner metrics" in result["message"]

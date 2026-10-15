@@ -49,7 +49,9 @@ Export safe configuration facts with the administrator helper:
 sudo python3 scripts/runner/admin.py --export-only --facts ./data/runner-facts.json
 ```
 
-For Compose, copy those facts into the named volume:
+With `deploy/docker/compose.services.yaml`, the host `data/` directory is already mounted read-only and facts are read from `/host-services/runner-facts.json`. See [Runner telemetry](../operations/runner-telemetry.md) for the metrics-only setup command.
+
+For Compose without that override, copy those facts into the named volume:
 
 ```bash
 docker compose --project-directory . -f deploy/docker/compose.yaml cp ./data/runner-facts.json opsdeck:/data/runner-facts.json

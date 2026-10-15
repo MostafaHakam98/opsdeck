@@ -3,6 +3,7 @@ services:
   opsdeck:
     environment:
       OPSDECK_SERVICES_FILE: /host-services/service-status.json
+      OPSDECK_RUNNER_FACTS: /host-services/runner-facts.json
     volumes:
       - type: bind
         source: '${OPSDECK_SERVICE_EXPORT_DIR:-./data}'

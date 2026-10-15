@@ -1,6 +1,7 @@
 """Administrator-only runner configuration edits; preserve TOML structure and secrets."""
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -73,6 +74,24 @@ def safe_facts(config):
         for r in config.get("runners", [])]}
 
 
+def metrics_config(text):
+    """Enable loopback metrics without changing any scheduling or registration fields."""
+    original = tomllib.loads(text)
+    address = "127.0.0.1:9252"
+    if original.get("listen_address") == address:
+        return text
+    if original.get("listen_address") not in (None, ""):
+        raise ValueError("A custom metrics address already exists; configure RUNNER_METRICS_URL for that address or review the config manually")
+    if "listen_address" in original:
+        candidate = replace_key(text, "listen_address", json.dumps(address))
+    else:
+        candidate = 'listen_address = "127.0.0.1:9252"\n' + text
+    updated = tomllib.loads(candidate)
+    if updated.pop("listen_address", None) != address or updated != {key: value for key, value in original.items() if key != "listen_address"}:
+        raise ValueError("Unsupported metrics configuration layout; no changes applied")
+    return candidate
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="/etc/gitlab-runner/config.toml")
@@ -83,10 +102,13 @@ def main():
     parser.add_argument("--cpus", type=float)
     parser.add_argument("--memory")
     parser.add_argument("--metrics", action="store_true")
+    parser.add_argument("--metrics-only", action="store_true", help="Enable loopback metrics while preserving all runner limits and settings")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--facts")
     parser.add_argument("--export-only", action="store_true")
     args = parser.parse_args()
+    if args.metrics_only and args.export_only:
+        parser.error("Choose metrics configuration or export-only, not both")
     if not 1 <= args.concurrent <= 32 or not 1 <= args.requests <= 8 or (args.limit is not None and not 1 <= args.limit <= 32):
         parser.error("Concurrency must be 1..32; request concurrency 1..8")
     if args.cpus is not None and not .5 <= args.cpus <= 48:
@@ -95,14 +117,20 @@ def main():
         parser.error("Memory must be a positive size in MiB/GiB, for example 32g")
     path = Path(args.config)
     text = path.read_text()
-    candidate = text if args.export_only else tune(text, args)
+    if args.export_only:
+        candidate = text
+    elif args.metrics_only:
+        candidate = metrics_config(text)
+    else:
+        candidate = tune(text, args)
     sys.stdout.write(json.dumps(safe_facts(tomllib.loads(candidate)), indent=2) + "\n")
-    if args.apply and not args.export_only:
+    if args.apply and not args.export_only and candidate != text:
         backup = str(path) + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
-        shutil.copy2(path, backup)
+        with os.fdopen(os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as output:
+            output.write(path.read_bytes())
         temporary = path.with_name(path.name + ".opsdeck-new")
         try:
-            with temporary.open("x") as output:
+            with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
                 output.write(candidate)
             shutil.copystat(path, temporary)
             temporary.replace(path)

@@ -3,6 +3,7 @@
 #
 #   sudo bash scripts/runner/tune-runner-host.sh status
 #   sudo bash scripts/runner/tune-runner-host.sh concurrency [N]
+#   sudo bash scripts/runner/tune-runner-host.sh metrics
 #   sudo bash scripts/runner/tune-runner-host.sh nvme-preflight
 #   sudo bash scripts/runner/tune-runner-host.sh nvme --confirm-unused-devices
 #   sudo bash scripts/runner/tune-runner-host.sh nvme-rollback --confirm-original-snapshot
@@ -50,6 +51,53 @@ phase_concurrency() {
   sleep 5
   journalctl -u gitlab-runner --since "-1min" --no-pager | grep -iE 'configuration loaded|error' | tail -3 || true
   echo "Restore the backup printed above if validation fails."
+}
+
+metrics_ready() {
+  python3 - <<'PY'
+import urllib.request
+import sys
+try:
+    with urllib.request.urlopen('http://127.0.0.1:9252/metrics', timeout=2) as response:
+        body = response.read(2 * 1024 * 1024).decode()
+    sys.exit(0 if any(line.startswith('gitlab_runner_') for line in body.splitlines()) else 1)
+except (OSError, UnicodeError):
+    sys.exit(1)
+PY
+}
+
+phase_metrics() {
+  python3 "$SCRIPT_DIR/admin.py" --config "$CONFIG" --metrics-only --apply \
+    --facts "$SCRIPT_DIR/../../data/runner-facts.json"
+  if metrics_ready; then
+    echo 'Runner metrics are already available; refreshed sanitized configuration facts.'
+    return
+  fi
+  if ! systemctl is-active --quiet gitlab-runner; then
+    echo 'Metrics configured. Runner is not active; start it when its maintenance is complete.'
+    return
+  fi
+  local original_pid current_pid deadline
+  original_pid=$(systemctl show gitlab-runner --property=MainPID --value)
+  [[ "$original_pid" =~ ^[1-9][0-9]*$ ]] || { echo 'Runner main PID unavailable; no signal sent.' >&2; return 1; }
+  echo 'Draining the runner gracefully: no new work; current jobs can finish.'
+  systemctl kill --kill-whom=main --signal=SIGQUIT gitlab-runner
+  deadline=$((SECONDS + 3600))
+  while true; do
+    current_pid=$(systemctl show gitlab-runner --property=MainPID --value)
+    [[ "$current_pid" == "$original_pid" ]] || break
+    [[ $SECONDS -lt $deadline ]] || { echo 'Still draining after one hour. No forced stop was issued; let jobs finish, then start the service if needed.' >&2; return 1; }
+    sleep 2
+  done
+  # Start is idempotent if the service restart policy has already launched it.
+  # Do not restart a new process: it may already have accepted another job.
+  systemctl start gitlab-runner
+  deadline=$((SECONDS + 60))
+  until metrics_ready; do
+    [[ $SECONDS -lt $deadline ]] || { echo 'Runner metrics did not become ready; inspect the service locally.' >&2; return 1; }
+    sleep 2
+  done
+  echo 'Runner metrics ready on loopback port 9252. Concurrency and job limits were preserved.'
 }
 
 assert_blank() {
@@ -170,6 +218,7 @@ phase_nvme_rollback() {
 case "${1:-status}" in
   status) phase_status ;;
   concurrency) phase_concurrency "${2:-16}" ;;
+  metrics) phase_metrics ;;
   nvme-preflight) phase_nvme_preflight ;;
   nvme) phase_nvme "${2:-}" ;;
   nvme-rollback) phase_nvme_rollback "${2:-}" ;;
