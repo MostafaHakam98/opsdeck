@@ -6,6 +6,7 @@ Start with [Getting started](guides/getting-started.md), then use the guides bel
 |---|---|
 | [Getting started](guides/getting-started.md) | Anonymous clone, setup, first launch, and daily commands |
 | [User guide](guides/user-guide.md) | Read each page, understand charts, investigate alerts, and use actions |
+| [Node access](guides/node-access.md) | Open a running deployment, retrieve its token, tunnel over SSH, and find the speedup report |
 | [Configuration](guides/configuration.md) | Every environment setting, integration setup, and collection scope |
 | [Deployment](operations/deployment.md) | Docker, Compose, NVIDIA, native services, offline installation, and cluster considerations |
 | [Operations](operations/maintenance.md) | Health, logs, backup/restore, updates, retention, and optimization workflow |

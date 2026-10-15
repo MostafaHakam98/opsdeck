@@ -54,6 +54,15 @@ class Optimization(Record):
     verify: Literal["nvme_docker", "nvme_cache", "toolchains", "cpu_epp", "manual"] = "manual"
 
 
+class Measurement(Record):
+    title: str = Field(max_length=160)
+    before: str = Field(default="", max_length=300)
+    after: str = Field(max_length=300)
+    kind: Literal["measured", "projection"]
+    evidence: str = Field(max_length=2000)
+    note: str = Field(default="", max_length=2000)
+
+
 class Archive(Record):
     schema_version: Literal[1] = 1
     title: str = Field(max_length=200)
@@ -68,6 +77,7 @@ class Archive(Record):
     optimizations: list[Optimization] = Field(default_factory=list, max_length=80)
     expected_images: list[str] = Field(default_factory=list, max_length=100)
     notes: list[str] = Field(default_factory=list, max_length=80)
+    measurements: list[Measurement] = Field(default_factory=list, max_length=80)
 
 
 def validate_archive(raw):

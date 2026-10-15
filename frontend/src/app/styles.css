@@ -858,6 +858,59 @@ tbody tr:hover {
   align-items: center;
   padding: 24px;
 }
+
+.comparison-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 20px 24px;
+}
+.speedup-report .panel-heading {
+  flex-wrap: wrap;
+}
+.comparison-controls label {
+  display: grid;
+  gap: 8px;
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.comparison-controls select {
+  width: 100%;
+}
+.speedup-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 12px;
+  padding: 0 24px 20px;
+}
+.speedup-cards > div {
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 18px;
+}
+.speedup-cards span,
+.speedup-cards small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.speedup-cards strong {
+  display: block;
+  margin: 10px 0;
+  font-size: 28px;
+  color: #194d72;
+}
+.speedup-cards p {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  margin: 0 0 8px;
+}
+.regression {
+  color: #a33c30;
+}
 .benchmark > div {
   flex: 1;
 }

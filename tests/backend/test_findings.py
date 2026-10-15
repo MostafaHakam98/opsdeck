@@ -76,3 +76,15 @@ def test_stdin_import_is_private_and_invalid_input_preserves_existing_archive(tm
     invalid = subprocess.run(command, input='{"unsupported": true}', text=True, capture_output=True)
     assert invalid.returncode != 0
     assert output.read_bytes() == original
+
+
+def test_supplementary_evidence_requires_explicit_measurement_or_projection(tmp_path):
+    data = archive().model_dump()
+    data["measurements"] = [{"title": "Execution target", "after": "10 seconds", "kind": "projection", "evidence": "Critical-path estimate"}]
+    path = tmp_path / "survey.json"
+    path.write_text(json.dumps(data))
+    assert load_archive(path).measurements[0].kind == "projection"
+    data["measurements"][0]["kind"] = "verified"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError):
+        load_archive(path)

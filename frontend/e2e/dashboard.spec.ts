@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 const token = "browser-test-token-at-least-32-characters";
 async function signIn(page: any) {
   await page.goto("/");
@@ -188,8 +189,36 @@ test("survey evidence and observed worker history remain distinct", async ({
             evidence: "Recorded evidence",
             jobs: [],
           },
+          {
+            pipeline_id: 102,
+            label: "Optimized",
+            status: "success",
+            runner_seconds: 60,
+            wall_seconds: 30,
+            queue_seconds: 120,
+            passed_jobs: 1,
+            total_jobs: 1,
+            evidence: "Recorded evidence",
+            jobs: [{ name: "example-build", status: "success", duration: 60 }],
+          },
         ],
-        job_comparisons: [{ name: "example-build", seconds: [180] }],
+        job_comparisons: [
+          { name: "example-build", seconds: [180, 60] },
+          {
+            name: "example-lint",
+            seconds: [30, 60],
+            note: "Cold-cache result",
+          },
+        ],
+        measurements: [
+          {
+            title: "Expected completion",
+            kind: "projection",
+            before: "Not recorded",
+            after: "10 seconds",
+            evidence: "Estimate",
+          },
+        ],
         notes: ["Projected timing is not a measurement."],
         optimizations: [
           {
@@ -242,6 +271,31 @@ test("survey evidence and observed worker history remain distinct", async ({
   ).toBeVisible();
   await expect(page.getByText("prepared", { exact: true })).toBeVisible();
   await expect(page.getByText("verified", { exact: true })).toBeVisible();
+  await expect(page.getByText("4.00×", { exact: true })).toBeVisible();
+  await expect(page.getByText("projection", { exact: true })).toBeVisible();
+  const timing = page
+    .getByRole("row")
+    .filter({ hasText: "Queue + execution (derived)" });
+  await expect(timing).toContainText("30s longer (25.0%)");
+  const received = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download speedup report" }).click();
+  const file = await received;
+  const downloaded = await readFile((await file.path())!, "utf8");
+  expect(downloaded).toContain("Cold-cache result");
+  expect(downloaded).toContain("| #101 | Interrupted | canceled |");
+  await page.getByLabel("Compare result", { exact: true }).selectOption("100");
+  await expect(page.getByText("1.00×", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const downloadButton = await page
+    .getByRole("button", { name: "Download speedup report" })
+    .boundingBox();
+  expect(downloadButton!.x + downloadButton!.width).toBeLessThanOrEqual(390);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByLabel("Recorded pipeline").selectOption("1");
   await expect(
     page.getByRole("heading", { name: "Recorded jobs · #101" }),

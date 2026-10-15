@@ -641,6 +641,25 @@ function App() {
                 </div>
               )}
               {stats}
+              {sources.findings?.data && (
+                <div className="notice">
+                  <ClipboardList size={18} />
+                  <div>
+                    <strong>Your runner speedup report</strong>
+                    <p>
+                      Compare the recorded baseline with optimization rounds,
+                      see time saved and regressions, and check what is verified
+                      on this host.
+                    </p>
+                    <button
+                      className="text-button"
+                      onClick={() => setPage("survey")}
+                    >
+                      Open speedup report <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="two-column overview-columns">
                 <Panel
                   title="Capacity over time"

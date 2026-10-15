@@ -15,6 +15,8 @@ make docker-up
 
 Open **http://127.0.0.1:8080** and enter the generated access token from the private `.env` file. Requires Docker Engine, Compose 2.30+, GNU Make, and Python 3.12+. See [Getting started](docs/guides/getting-started.md) for native setup and environments without the `safe-git` wrapper.
 
+For a running remote node, see [Node access](docs/guides/node-access.md). **Survey & benchmarks** generates an explicit speedup report from recorded measurements, including queue effects, regressions, and independently checked optimizations.
+
 For NVIDIA telemetry, configure the node's NVIDIA Container Toolkit and run `make docker-gpu-up`. For a portable app preview without full host access, run `make docker-sandbox-up`.
 
 ## What you can inspect

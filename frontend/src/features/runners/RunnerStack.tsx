@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { Box, ClipboardList, Search, Server } from "lucide-react";
 import { bytes, duration, safeUrl, type Source } from "../../lib/api";
+import { SpeedupReport } from "./SpeedupReport";
 
 function Section({
   title,
@@ -51,7 +52,7 @@ function Empty({ text }: { text: string }) {
 
 export function SurveyPage({ source }: { source?: Source }) {
   const archive = source?.data;
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState<number | null>(null);
   if (!archive)
     return (
       <Section title="Survey archive">
@@ -66,17 +67,16 @@ export function SurveyPage({ source }: { source?: Source }) {
   const measured = archive.benchmarks.filter(
     (b: any) => b.runner_seconds != null,
   );
-  const first = measured[0],
-    last = measured[measured.length - 1];
+  const last = measured[measured.length - 1];
   const benchmarks = measured.map((b: any) => ({
     label: `#${b.pipeline_id}`,
-    execution: b.wall_seconds / 60,
-    queue: b.queue_seconds / 60,
+    execution: b.wall_seconds == null ? null : b.wall_seconds / 60,
+    queue: b.queue_seconds == null ? null : b.queue_seconds / 60,
   }));
+  const selectedIndex =
+    selected ?? Math.max(0, archive.benchmarks.indexOf(last));
   const pipeline =
-    archive.benchmarks[Math.min(selected, archive.benchmarks.length - 1)];
-  const improvement = (a: number, b: number) =>
-    a > 0 ? `${(((a - b) / a) * 100).toFixed(1)}%` : "—";
+    archive.benchmarks[Math.min(selectedIndex, archive.benchmarks.length - 1)];
   return (
     <>
       <div className="optimization-intro">
@@ -90,38 +90,7 @@ export function SurveyPage({ source }: { source?: Source }) {
           </p>
         </div>
       </div>
-      {first && last && (
-        <div className="summary-row">
-          <div>
-            <Server />
-            <strong>{duration(last.runner_seconds)}</strong>
-            <span>
-              Job time summed ·{" "}
-              {improvement(first.runner_seconds, last.runner_seconds)} less
-            </span>
-          </div>
-          <div>
-            <Server />
-            <strong>{duration(last.wall_seconds)}</strong>
-            <span>
-              Observed wall time ·{" "}
-              {improvement(first.wall_seconds, last.wall_seconds)} less
-            </span>
-          </div>
-          <div>
-            <Box />
-            <strong>
-              {last.passed_jobs}/{last.total_jobs}
-            </strong>
-            <span>Passed jobs in final benchmark</span>
-          </div>
-          <div>
-            <Server />
-            <strong>{duration(last.queue_seconds)}</strong>
-            <span>Wait before first job</span>
-          </div>
-        </div>
-      )}
+      <SpeedupReport archive={archive} />
       {Object.keys(archive.context || {}).length > 0 && (
         <Section title="Survey context">
           <dl className="facts">
@@ -279,7 +248,7 @@ export function SurveyPage({ source }: { source?: Source }) {
           <div className="table-toolbar">
             <select
               aria-label="Recorded pipeline"
-              value={selected}
+              value={selectedIndex}
               onChange={(e) => setSelected(Number(e.target.value))}
             >
               {archive.benchmarks.map((b: any, i: number) => (

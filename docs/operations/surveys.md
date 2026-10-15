@@ -4,6 +4,10 @@ OpsDeck can retain a runner survey without connecting to GitLab. Use this for th
 
 **Survey & benchmarks** shows recorded outcomes and timings. **Runner stack** shows live Docker workers, local image tags, toolchain availability, cache volumes, and their storage paths. The Overview strip counts identified running CI containers, including build/helper/service containers; this is not a GitLab queue count.
 
+Open **Your runner speedup report** from Overview, or **Survey & benchmarks** in the navigation. Choose **Compare baseline** and **Compare result** to calculate execution speedup, runner work saved, queue wait, and job regressions. The queue-plus-execution total is derived and can reveal when waiting offsets execution gains. Download the selected comparison, job caveats, optimization evidence, and follow-ups with **Download speedup report**.
+
+Optional `measurements` rows preserve additional experiments: `title`, `before`, `after`, `kind` (`measured` or `projection`), `evidence`, and `note`. Use measured ranges exactly as observed; label estimates as projections. Ratios are calculated only for known nonnegative timings, and a zero duration never creates an infinite speedup.
+
 ## Import an archive
 
 Create a JSON file following `backend/findings.py`'s version-1 schema, then validate and import it:
