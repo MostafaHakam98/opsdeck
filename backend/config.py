@@ -11,6 +11,11 @@ class Settings:
     interval: int = field(default_factory=lambda: max(5, int(os.getenv("OPSDECK_SAMPLE_SECONDS", "10"))))
     retention: int = field(default_factory=lambda: max(1, int(os.getenv("OPSDECK_RETENTION_DAYS", "30"))))
     actions: bool = field(default_factory=lambda: os.getenv("OPSDECK_ACTIONS", "false").lower() == "true")
+    operations: bool = field(default_factory=lambda: os.getenv("OPSDECK_OPERATIONS", "false").lower() == "true")
+    runner_control_socket: str = field(default_factory=lambda: os.getenv("OPSDECK_RUNNER_CONTROL_SOCKET", ""))
+    image_upload_dir: str = field(default_factory=lambda: os.getenv("OPSDECK_IMAGE_UPLOAD_DIR", "./data/image-uploads"))
+    image_upload_max_gib: int = field(default_factory=lambda: int(os.getenv("OPSDECK_IMAGE_UPLOAD_MAX_GIB", "32")))
+    build_contexts_file: str = field(default_factory=lambda: os.getenv("OPSDECK_BUILD_CONTEXTS_FILE", ""))
     gitlab_url: str = field(default_factory=lambda: os.getenv("GITLAB_URL", "").rstrip("/"))
     gitlab_token: str = field(default_factory=lambda: os.getenv("GITLAB_TOKEN", ""))
     projects: list[str] = field(default_factory=lambda: [p.strip() for p in os.getenv("GITLAB_PROJECT_IDS", "").split(",") if p.strip()][:8])
@@ -29,5 +34,7 @@ class Settings:
             raise ValueError("Set OPSDECK_TOKEN to a random secret of at least 32 characters")
         if self.gitlab_token and not self.gitlab_url.startswith("https://"):
             raise ValueError("GITLAB_URL must use HTTPS when a token is configured")
+        if not 1 <= self.image_upload_max_gib <= 128:
+            raise ValueError("OPSDECK_IMAGE_UPLOAD_MAX_GIB must be 1..128")
         if self.host_root and (not Path(self.host_root).is_absolute() or not Path(self.procfs_path, "meminfo").is_file()):
             raise ValueError("Host monitoring requires an absolute host root and a readable host procfs mount")

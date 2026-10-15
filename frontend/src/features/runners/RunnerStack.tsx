@@ -12,6 +12,7 @@ import {
 import { Box, ClipboardList, Search, Server } from "lucide-react";
 import { bytes, duration, safeUrl, type Source } from "../../lib/api";
 import { SpeedupReport } from "./SpeedupReport";
+import { Pager } from "../../components/Pager";
 
 function Section({
   title,
@@ -377,13 +378,42 @@ export function RunnerInventory({
 }) {
   const [query, setQuery] = useState("");
   const [workerState, setWorkerState] = useState("running");
+  const [workerQuery, setWorkerQuery] = useState("");
+  const [workerRole, setWorkerRole] = useState("all");
+  const [workerPage, setWorkerPage] = useState(1);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyState, setHistoryState] = useState("all");
+  const [historyPage, setHistoryPage] = useState(1);
+  const [imageFilter, setImageFilter] = useState("all");
+  const [imageSort, setImageSort] = useState("newest");
+  const [imagePage, setImagePage] = useState(1);
+
   const workers = (docker?.containers || []).filter((c: any) => c.ci);
   const visibleWorkers = workers.filter(
     (c: any) =>
-      workerState === "all" ||
-      (workerState === "running"
-        ? c.state === "running"
-        : c.state !== "running"),
+      (workerState === "all" ||
+        (workerState === "running"
+          ? c.state === "running"
+          : c.state !== "running")) &&
+      (workerRole === "all" || c.ci_metadata?.role === workerRole) &&
+      `${c.name} ${c.image} ${c.ci_metadata?.job_id || ""} ${c.ci_metadata?.project_id || ""} ${c.ci_metadata?.project_path || ""}`
+        .toLowerCase()
+        .includes(workerQuery.toLowerCase()),
+  );
+  const workerCurrentPage = Math.min(
+    workerPage,
+    Math.max(1, Math.ceil(visibleWorkers.length / 20)),
+  );
+  const historyRows = (docker?.worker_history || []).filter(
+    (c: any) =>
+      (historyState === "all" || c.state === historyState) &&
+      `${c.name} ${c.image} ${c.ci_metadata?.job_id || ""} ${c.ci_metadata?.project_path || c.ci_metadata?.project_id || ""}`
+        .toLowerCase()
+        .includes(historyQuery.toLowerCase()),
+  );
+  const historyCurrentPage = Math.min(
+    historyPage,
+    Math.max(1, Math.ceil(historyRows.length / 20)),
   );
   const stopped = workers.filter((c: any) => c.state !== "running").length;
   const workerImage = (container: any) => {
@@ -398,8 +428,31 @@ export function RunnerInventory({
       full: tag,
     };
   };
-  const images = (docker?.images || []).filter((i: any) =>
-    i.tags.join(" ").toLowerCase().includes(query.toLowerCase()),
+  const images = (docker?.images || [])
+    .filter(
+      (i: any) =>
+        `${i.tags.join(" ")} ${i.id}`
+          .toLowerCase()
+          .includes(query.toLowerCase()) &&
+        (imageFilter === "all" ||
+          (imageFilter === "tagged"
+            ? i.tags.length > 0
+            : imageFilter === "untagged"
+              ? !i.tags.length
+              : imageFilter === "referenced"
+                ? i.referencing_containers > 0
+                : !i.referencing_containers)),
+    )
+    .sort((a: any, b: any) =>
+      imageSort === "size"
+        ? b.size_bytes - a.size_bytes
+        : imageSort === "name"
+          ? (a.tags[0] || a.id).localeCompare(b.tags[0] || b.id)
+          : (b.created || 0) - (a.created || 0),
+    );
+  const imageCurrentPage = Math.min(
+    imagePage,
+    Math.max(1, Math.ceil(images.length / 20)),
   );
   const registry = (archive?.context || {}).registry;
   return (
@@ -442,12 +495,45 @@ export function RunnerInventory({
         note="Live Docker state"
       >
         <div className="table-toolbar">
+          <input
+            aria-label="Search CI workers"
+            placeholder="Search worker, project, job or image"
+            value={workerQuery}
+            onChange={(e) => {
+              setWorkerQuery(e.target.value);
+              setWorkerPage(1);
+            }}
+          />
+          <select
+            aria-label="Worker role"
+            value={workerRole}
+            onChange={(e) => {
+              setWorkerRole(e.target.value);
+              setWorkerPage(1);
+            }}
+          >
+            <option value="all">All roles</option>
+            {Array.from(
+              new Set<string>(
+                workers.map((c: any) => c.ci_metadata?.role).filter(Boolean),
+              ),
+            )
+              .sort()
+              .map((role) => (
+                <option value={role} key={role}>
+                  {role}
+                </option>
+              ))}
+          </select>
           <label>
             Worker state{" "}
             <select
               aria-label="Worker state"
               value={workerState}
-              onChange={(event) => setWorkerState(event.target.value)}
+              onChange={(event) => {
+                setWorkerState(event.target.value);
+                setWorkerPage(1);
+              }}
             >
               <option value="running">Running containers</option>
               <option value="inactive">Not running ({stopped})</option>
@@ -456,6 +542,16 @@ export function RunnerInventory({
               </option>
             </select>
           </label>
+          <button
+            onClick={() => {
+              setWorkerState("running");
+              setWorkerRole("all");
+              setWorkerQuery("");
+              setWorkerPage(1);
+            }}
+          >
+            Reset filters
+          </button>
         </div>
         {visibleWorkers.length ? (
           <div className="table-wrap">
@@ -470,36 +566,40 @@ export function RunnerInventory({
                 </tr>
               </thead>
               <tbody>
-                {visibleWorkers.map((c: any) => (
-                  <tr key={c.id}>
-                    <td>{c.name}</td>
-                    <td>
-                      <Pill value={c.state} />
-                      <small>{c.ci_metadata?.role || "Role not labeled"}</small>
-                    </td>
-                    <td title={workerImage(c).full}>
-                      {workerImage(c).label}
-                      <small title={c.image}>
-                        {c.image.startsWith("sha256:")
-                          ? `${c.image.slice(0, 19)}…`
-                          : ""}
-                      </small>
-                    </td>
-                    <td>
-                      {c.ci_metadata?.job_id || "Not labeled"}
-                      <small>
-                        {c.ci_metadata?.project_path ||
-                          c.ci_metadata?.project_id}
-                      </small>
-                    </td>
-                    <td>
-                      {c.cpu_percent == null
-                        ? "—"
-                        : `${c.cpu_percent.toFixed(1)}%`}{" "}
-                      / {bytes(c.memory_bytes)}
-                    </td>
-                  </tr>
-                ))}
+                {visibleWorkers
+                  .slice((workerCurrentPage - 1) * 20, workerCurrentPage * 20)
+                  .map((c: any) => (
+                    <tr key={c.id}>
+                      <td>{c.name}</td>
+                      <td>
+                        <Pill value={c.state} />
+                        <small>
+                          {c.ci_metadata?.role || "Role not labeled"}
+                        </small>
+                      </td>
+                      <td title={workerImage(c).full}>
+                        {workerImage(c).label}
+                        <small title={c.image}>
+                          {c.image.startsWith("sha256:")
+                            ? `${c.image.slice(0, 19)}…`
+                            : ""}
+                        </small>
+                      </td>
+                      <td>
+                        {c.ci_metadata?.job_id || "Not labeled"}
+                        <small>
+                          {c.ci_metadata?.project_path ||
+                            c.ci_metadata?.project_id}
+                        </small>
+                      </td>
+                      <td>
+                        {c.cpu_percent == null
+                          ? "—"
+                          : `${c.cpu_percent.toFixed(1)}%`}{" "}
+                        / {bytes(c.memory_bytes)}
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -507,13 +607,21 @@ export function RunnerInventory({
           <Empty
             text={
               docker
-                ? workerState === "running"
-                  ? `No CI containers are running. ${stopped} non-running containers remain on this host; select All retained containers to inspect them.`
-                  : "No CI containers match this state."
+                ? workerQuery || workerRole !== "all"
+                  ? "No CI containers match these filters. Reset filters to see current workers."
+                  : workerState === "running"
+                    ? `No CI containers are running. ${stopped} non-running containers remain on this host; select All retained containers to inspect them.`
+                    : "No CI containers match this state."
                 : "Docker inventory is unavailable."
             }
           />
         )}
+        <Pager
+          total={visibleWorkers.length}
+          page={workerCurrentPage}
+          size={20}
+          onPage={setWorkerPage}
+        />
         <p className="panel-description">
           CPU/RAM is sampled for running containers. An exited container is not
           proof that a job passed or failed.
@@ -527,7 +635,48 @@ export function RunnerInventory({
           Sampled every 15 seconds. Short-lived containers can be missed;
           disappearance does not establish a job outcome.
         </p>
-        {docker?.worker_history?.length ? (
+        <div className="table-toolbar">
+          <input
+            aria-label="Search worker history"
+            placeholder="Search past workers, jobs or images"
+            value={historyQuery}
+            onChange={(e) => {
+              setHistoryQuery(e.target.value);
+              setHistoryPage(1);
+            }}
+          />
+          <select
+            aria-label="Worker history state"
+            value={historyState}
+            onChange={(e) => {
+              setHistoryState(e.target.value);
+              setHistoryPage(1);
+            }}
+          >
+            <option value="all">All observed states</option>
+            {Array.from(
+              new Set<string>(
+                (docker?.worker_history || []).map((c: any) => c.state),
+              ),
+            )
+              .sort()
+              .map((state) => (
+                <option key={state} value={state}>
+                  {state.replaceAll("_", " ")}
+                </option>
+              ))}
+          </select>
+          <button
+            onClick={() => {
+              setHistoryQuery("");
+              setHistoryState("all");
+              setHistoryPage(1);
+            }}
+          >
+            Reset filters
+          </button>
+        </div>
+        {historyRows.length ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -539,34 +688,48 @@ export function RunnerInventory({
                 </tr>
               </thead>
               <tbody>
-                {docker.worker_history.map((c: any) => (
-                  <tr key={c.id}>
-                    <td>
-                      {c.name}
-                      <small>{c.image}</small>
-                    </td>
-                    <td>
-                      <Pill value={c.state} />
-                      <small>{c.status}</small>
-                    </td>
-                    <td>
-                      {new Date(c.first_seen * 1000).toLocaleString()}
-                      <small>
-                        {new Date(c.last_seen * 1000).toLocaleString()}
-                      </small>
-                    </td>
-                    <td>
-                      {c.cpu_peak == null ? "—" : `${c.cpu_peak.toFixed(1)}%`} /{" "}
-                      {bytes(c.memory_peak)}
-                    </td>
-                  </tr>
-                ))}
+                {historyRows
+                  .slice((historyCurrentPage - 1) * 20, historyCurrentPage * 20)
+                  .map((c: any) => (
+                    <tr key={c.id}>
+                      <td>
+                        {c.name}
+                        <small>{c.image}</small>
+                      </td>
+                      <td>
+                        <Pill value={c.state} />
+                        <small>{c.status}</small>
+                      </td>
+                      <td>
+                        {new Date(c.first_seen * 1000).toLocaleString()}
+                        <small>
+                          {new Date(c.last_seen * 1000).toLocaleString()}
+                        </small>
+                      </td>
+                      <td>
+                        {c.cpu_peak == null ? "—" : `${c.cpu_peak.toFixed(1)}%`}{" "}
+                        / {bytes(c.memory_peak)}
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <Empty text="CI container history starts when workers are first observed." />
+          <Empty
+            text={
+              docker?.worker_history?.length
+                ? "No history entries match these filters."
+                : "CI container history starts when workers are first observed."
+            }
+          />
         )}
+        <Pager
+          total={historyRows.length}
+          page={historyCurrentPage}
+          size={20}
+          onPage={setHistoryPage}
+        />
       </Section>
       <Section
         title="Pipeline and toolchain images on this host"
@@ -583,9 +746,48 @@ export function RunnerInventory({
               aria-label="Search pipeline images"
               placeholder="Search image tags or toolchain profiles"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setImagePage(1);
+              }}
             />
           </label>
+          <select
+            aria-label="Image usage"
+            value={imageFilter}
+            onChange={(e) => {
+              setImageFilter(e.target.value);
+              setImagePage(1);
+            }}
+          >
+            <option value="all">All images</option>
+            <option value="tagged">Tagged</option>
+            <option value="untagged">Untagged</option>
+            <option value="referenced">Referenced by containers</option>
+            <option value="unused">No container references</option>
+          </select>
+          <select
+            aria-label="Sort images"
+            value={imageSort}
+            onChange={(e) => {
+              setImageSort(e.target.value);
+              setImagePage(1);
+            }}
+          >
+            <option value="newest">Newest first</option>
+            <option value="size">Largest first</option>
+            <option value="name">Name</option>
+          </select>
+          <button
+            onClick={() => {
+              setQuery("");
+              setImageFilter("all");
+              setImageSort("newest");
+              setImagePage(1);
+            }}
+          >
+            Reset filters
+          </button>
         </div>
         {images.length ? (
           <div className="table-wrap">
@@ -599,31 +801,39 @@ export function RunnerInventory({
                 </tr>
               </thead>
               <tbody>
-                {images.map((i: any) => (
-                  <tr key={i.id}>
-                    <td>
-                      {i.tags.length
-                        ? i.tags.map((tag: string) => (
-                            <div key={tag}>{tag}</div>
-                          ))
-                        : "Untagged"}
-                      <small>{i.id.slice(0, 24)}</small>
-                    </td>
-                    <td>{bytes(i.size_bytes)}</td>
-                    <td>
-                      {i.created
-                        ? new Date(i.created * 1000).toLocaleString()
-                        : "—"}
-                    </td>
-                    <td>{i.referencing_containers}</td>
-                  </tr>
-                ))}
+                {images
+                  .slice((imageCurrentPage - 1) * 20, imageCurrentPage * 20)
+                  .map((i: any) => (
+                    <tr key={i.id}>
+                      <td>
+                        {i.tags.length
+                          ? i.tags.map((tag: string) => (
+                              <div key={tag}>{tag}</div>
+                            ))
+                          : "Untagged"}
+                        <small>{i.id.slice(0, 24)}</small>
+                      </td>
+                      <td>{bytes(i.size_bytes)}</td>
+                      <td>
+                        {i.created
+                          ? new Date(i.created * 1000).toLocaleString()
+                          : "—"}
+                      </td>
+                      <td>{i.referencing_containers}</td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
         ) : (
           <Empty text="No matching image tags in the current catalog." />
         )}
+        <Pager
+          total={images.length}
+          page={imageCurrentPage}
+          size={20}
+          onPage={setImagePage}
+        />
         <p className="panel-description">
           Sizes share layers and cannot be added to estimate disk usage. Tags
           shown together reference one image ID. This catalog is bounded to 500

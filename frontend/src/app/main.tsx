@@ -61,6 +61,9 @@ import {
   RecordedOptimizations,
 } from "../features/runners/RunnerStack";
 import { RunnerTelemetry } from "../features/runners/RunnerTelemetry";
+import { OperatorConsole } from "../features/operations/OperatorConsole";
+import { EventHistory } from "../features/operations/EventHistory";
+import { Pager } from "../components/Pager";
 
 const pages = [
   { id: "overview", title: "Overview", icon: LayoutDashboard },
@@ -69,6 +72,7 @@ const pages = [
   { id: "gitlab", title: "Runner stack", icon: GitBranch },
   { id: "survey", title: "Survey & benchmarks", icon: ClipboardList },
   { id: "optimization", title: "Optimization", icon: Zap },
+  { id: "operations", title: "Operations", icon: SlidersHorizontal },
   { id: "activity", title: "Activity & audit", icon: Activity },
   { id: "connections", title: "Connections", icon: Settings },
 ];
@@ -326,6 +330,9 @@ function App() {
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [query, setQuery] = useState("");
+  const [containerRole, setContainerRole] = useState("all");
+  const [containerSort, setContainerSort] = useState("name");
+  const [containerPage, setContainerPage] = useState(1);
   const [containerFilter, setContainerFilter] = useState("all");
   const [showVirtualNetwork, setShowVirtualNetwork] = useState(false);
   const [jobFilter, setJobFilter] = useState("all");
@@ -406,10 +413,30 @@ function App() {
   const title = pages.find((p) => p.id === page)?.title || "Overview";
   const latest = sources.host?.updated_at;
   const ciKnown = sources.gitlab?.status === "healthy";
-  const filteredContainers = containers.filter(
-    (c) =>
-      `${c.name} ${c.image}`.toLowerCase().includes(query.toLowerCase()) &&
-      (containerFilter === "all" || c.state === containerFilter),
+  const filteredContainers = containers
+    .filter(
+      (c) =>
+        `${c.name} ${c.image} ${c.id}`
+          .toLowerCase()
+          .includes(query.toLowerCase()) &&
+        (containerFilter === "all" || c.state === containerFilter) &&
+        (containerRole === "all" ||
+          (containerRole === "ci"
+            ? c.ci
+            : containerRole === "managed"
+              ? c.managed && !c.ci
+              : !c.managed && !c.ci)),
+    )
+    .sort((a, b) =>
+      containerSort === "cpu"
+        ? (b.cpu_percent ?? -1) - (a.cpu_percent ?? -1)
+        : containerSort === "memory"
+          ? (b.memory_bytes ?? -1) - (a.memory_bytes ?? -1)
+          : a.name.localeCompare(b.name),
+    );
+  const containerCurrentPage = Math.min(
+    containerPage,
+    Math.max(1, Math.ceil(filteredContainers.length / 20)),
   );
   const runnerMetrics = sources.runner?.data?.metrics || {};
   async function previewAction(action: string, target: string) {
@@ -1154,18 +1181,63 @@ function App() {
                       aria-label="Search containers"
                       placeholder="Search containers or images"
                       value={query}
-                      onChange={(e) => setQuery(e.target.value)}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setContainerPage(1);
+                      }}
                     />
                   </label>
                   <select
                     aria-label="Container state"
                     value={containerFilter}
-                    onChange={(e) => setContainerFilter(e.target.value)}
+                    onChange={(e) => {
+                      setContainerFilter(e.target.value);
+                      setContainerPage(1);
+                    }}
                   >
                     <option value="all">All states</option>
                     <option value="running">Running</option>
                     <option value="exited">Exited</option>
+                    <option value="paused">Paused</option>
+                    <option value="restarting">Restarting</option>
+                    <option value="created">Created</option>
                   </select>
+                  <select
+                    aria-label="Container ownership"
+                    value={containerRole}
+                    onChange={(e) => {
+                      setContainerRole(e.target.value);
+                      setContainerPage(1);
+                    }}
+                  >
+                    <option value="all">All ownership</option>
+                    <option value="ci">CI containers</option>
+                    <option value="managed">Managed services</option>
+                    <option value="observe">Observe only</option>
+                  </select>
+                  <select
+                    aria-label="Sort containers"
+                    value={containerSort}
+                    onChange={(e) => {
+                      setContainerSort(e.target.value);
+                      setContainerPage(1);
+                    }}
+                  >
+                    <option value="name">Name</option>
+                    <option value="cpu">Highest CPU</option>
+                    <option value="memory">Highest memory</option>
+                  </select>
+                  <button
+                    onClick={() => {
+                      setQuery("");
+                      setContainerFilter("all");
+                      setContainerRole("all");
+                      setContainerSort("name");
+                      setContainerPage(1);
+                    }}
+                  >
+                    Reset filters
+                  </button>
                 </div>
                 {filteredContainers.length ? (
                   <div className="table-wrap">
@@ -1181,55 +1253,62 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredContainers.map((c) => (
-                          <tr key={c.id}>
-                            <td>
-                              <strong>{c.name}</strong>
-                              <small>{c.image}</small>
-                            </td>
-                            <td>
-                              <Badge value={c.state} />
-                              <small>{c.status}</small>
-                            </td>
-                            <td>{pct(c.cpu_percent)}</td>
-                            <td>
-                              {bytes(c.memory_bytes)}
-                              <small>Limit {bytes(c.memory_limit)}</small>
-                            </td>
-                            <td>
-                              {c.ci
-                                ? "CI job"
-                                : c.managed
-                                  ? "Managed"
-                                  : "Observe only"}
-                            </td>
-                            <td>
-                              {snapshot?.actions_enabled &&
-                              c.managed &&
-                              !c.ci &&
-                              c.state === "running" ? (
-                                <div className="inline-actions">
-                                  <button
-                                    disabled={busy}
-                                    onClick={() =>
-                                      previewAction("restart", c.id)
-                                    }
-                                  >
-                                    Restart
-                                  </button>
-                                  <button
-                                    disabled={busy}
-                                    onClick={() => previewAction("stop", c.id)}
-                                  >
-                                    Stop
-                                  </button>
-                                </div>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                        {filteredContainers
+                          .slice(
+                            (containerCurrentPage - 1) * 20,
+                            containerCurrentPage * 20,
+                          )
+                          .map((c) => (
+                            <tr key={c.id}>
+                              <td>
+                                <strong>{c.name}</strong>
+                                <small>{c.image}</small>
+                              </td>
+                              <td>
+                                <Badge value={c.state} />
+                                <small>{c.status}</small>
+                              </td>
+                              <td>{pct(c.cpu_percent)}</td>
+                              <td>
+                                {bytes(c.memory_bytes)}
+                                <small>Limit {bytes(c.memory_limit)}</small>
+                              </td>
+                              <td>
+                                {c.ci
+                                  ? "CI job"
+                                  : c.managed
+                                    ? "Managed"
+                                    : "Observe only"}
+                              </td>
+                              <td>
+                                {snapshot?.actions_enabled &&
+                                c.managed &&
+                                !c.ci &&
+                                c.state === "running" ? (
+                                  <div className="inline-actions">
+                                    <button
+                                      disabled={busy}
+                                      onClick={() =>
+                                        previewAction("restart", c.id)
+                                      }
+                                    >
+                                      Restart
+                                    </button>
+                                    <button
+                                      disabled={busy}
+                                      onClick={() =>
+                                        previewAction("stop", c.id)
+                                      }
+                                    >
+                                      Stop
+                                    </button>
+                                  </div>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                            </tr>
+                          ))}
                       </tbody>
                     </table>
                   </div>
@@ -1245,6 +1324,12 @@ function App() {
                     }
                   />
                 )}
+                <Pager
+                  total={filteredContainers.length}
+                  page={containerCurrentPage}
+                  size={20}
+                  onPage={setContainerPage}
+                />
                 <p className="panel-description">
                   Container CPU can exceed 100% when using multiple cores. CPU
                   rates need two samples. Stats cover up to 64 running
@@ -1267,6 +1352,13 @@ function App() {
                 </div>
               </div>
             </>
+          )}
+          {page === "operations" && (
+            <OperatorConsole
+              token={token}
+              images={docker?.images || []}
+              onChanged={() => setRefresh((value) => value + 1)}
+            />
           )}
           {page === "survey" && <SurveyPage source={sources.findings} />}
           {page === "optimization" && (
@@ -1395,7 +1487,10 @@ function App() {
                         aria-label="Search jobs"
                         placeholder="Search jobs or projects"
                         value={query}
-                        onChange={(e) => setQuery(e.target.value)}
+                        onChange={(e) => {
+                          setQuery(e.target.value);
+                          setContainerPage(1);
+                        }}
                       />
                     </label>
                     <select
@@ -1557,32 +1652,7 @@ function App() {
                 title="Event & action history"
                 note="Most recent 100 events"
               >
-                {events.length ? (
-                  <div className="event-list">
-                    {events.map((e) => (
-                      <div key={e.id}>
-                        {e.kind === "action" ? (
-                          <ShieldCheck size={18} />
-                        ) : (
-                          <Activity size={18} />
-                        )}
-                        <div>
-                          <strong>{e.title}</strong>
-                          <p>{e.detail}</p>
-                          <small>
-                            {new Date(e.ts * 1000).toLocaleString()} · {e.kind}
-                          </small>
-                        </div>
-                        <Badge value={e.severity} />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <Empty
-                    title="Your audit trail starts here"
-                    text="New threshold alerts, cleared conditions, and action executions appear as they happen."
-                  />
-                )}
+                <EventHistory events={events} />
               </Panel>
             </>
           )}

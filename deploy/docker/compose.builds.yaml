@@ -1,0 +1,18 @@
+# Optional read-only checkouts and private build-profile definitions.
+services:
+  opsdeck:
+    environment:
+      OPSDECK_BUILD_CONTEXTS_FILE: /build-profiles.json
+    volumes:
+      - type: bind
+        source: '${OPSDECK_BUILD_ROOT:?Set the host directory containing build checkouts}'
+        target: /build-contexts
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: '${OPSDECK_BUILD_PROFILES:?Set the private build-profile JSON path}'
+        target: /build-profiles.json
+        read_only: true
+        bind:
+          create_host_path: false

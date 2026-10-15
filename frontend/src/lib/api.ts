@@ -115,3 +115,61 @@ export function download(name: string, text: string, type: string) {
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+export type Upload = {
+  id: string;
+  kind: "image" | "context";
+  name: string;
+  bytes: number;
+  sha256: string;
+};
+export function uploadArchive(
+  token: string,
+  file: File,
+  kind: string,
+  progress: (percent: number) => void,
+  signal: AbortSignal,
+): Promise<Upload> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open(
+      "POST",
+      `/api/operations/uploads?kind=${kind}&name=${encodeURIComponent(file.name.slice(0, 120))}`,
+    );
+    request.setRequestHeader("Authorization", `Bearer ${token}`);
+    request.setRequestHeader("Content-Type", "application/octet-stream");
+    const abort = () => request.abort();
+    signal.addEventListener("abort", abort, { once: true });
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable)
+        progress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onloadend = () => signal.removeEventListener("abort", abort);
+    request.onload = () => {
+      let data: any;
+      try {
+        data = JSON.parse(request.responseText);
+      } catch {
+        reject(new Error("Upload failed; check the server connection"));
+        return;
+      }
+      if (request.status >= 200 && request.status < 300) resolve(data);
+      else
+        reject(
+          new Error(
+            typeof data.detail === "string"
+              ? data.detail
+              : "Archive upload failed",
+          ),
+        );
+    };
+    request.onerror = () =>
+      reject(new Error("Upload connection lost; choose the archive again"));
+    request.onabort = () => reject(new Error("Upload cancelled"));
+    if (signal.aborted) {
+      reject(new Error("Upload cancelled"));
+      return;
+    }
+    request.send(file);
+  });
+}

@@ -1,0 +1,21 @@
+# Optional root-installed capacity helper; install it before using this override.
+services:
+  opsdeck:
+    group_add:
+      - '${OPSDECK_CONTROL_GID:?Set the opsdeck-control host group ID}'
+    environment:
+      OPSDECK_RUNNER_CONTROL_SOCKET: /runner-control/runner.sock
+      OPSDECK_RUNNER_FACTS: /runner-control-data/runner-facts.json
+    volumes:
+      - type: bind
+        source: /run/opsdeck-control
+        target: /runner-control
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /var/lib/opsdeck-control
+        target: /runner-control-data
+        read_only: true
+        bind:
+          create_host_path: false

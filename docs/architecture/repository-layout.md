@@ -9,6 +9,8 @@ opsdeck/
 │   ├── src/
 │   │   ├── app/                # Browser entry point and application styling
 │   │   ├── features/runners/   # Runner inventory and survey views
+│   │   ├── features/operations/ # Operator controls and searchable audit history
+│   │   ├── components/        # Shared table controls
 │   │   └── lib/                # API client, formatters, and their unit tests
 │   └── e2e/                    # Browser tests
 ├── deploy/

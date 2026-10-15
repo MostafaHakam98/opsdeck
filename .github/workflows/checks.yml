@@ -49,3 +49,4 @@ jobs:
       - run: make init docker-config
       - run: make docker-build
       - run: make docker-test
+      - run: make docker-image-test

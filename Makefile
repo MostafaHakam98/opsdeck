@@ -84,6 +84,10 @@ docker-build: ## Build the multi-stage application image
 docker-test: ## Verify Compose auth, persistent history, and Linux host collection in a disposable project
 	$(PYTHON) -m deploy.container_smoke
 
+.PHONY: docker-image-test
+docker-image-test: ## Verify real image build, tag, save/load through an isolated API and disposable images
+	docker run --rm --network=none --group-add '$(DOCKER_SOCKET_GID)' -v '$(DOCKER_SOCKET):/var/run/docker.sock:ro' $(IMAGE) python -m deploy.image_smoke
+
 docker-config: init ## Validate portable, Linux host, and GPU Compose configurations (no secrets printed)
 	$(COMPOSE) config --quiet
 	OPSDECK_DOCKER_GID=$${OPSDECK_DOCKER_GID:-$(DOCKER_SOCKET_GID)} $(HOST_COMPOSE) config --quiet
@@ -114,6 +118,13 @@ docker-restart: ## Restart the running app without changing its deployment mode
 
 docker-backup: ## Back up container SQLite data inside its persistent volume
 	$(COMPOSE) exec opsdeck python -m deploy.backup --source /data/opsdeck.sqlite --output /data/backups/opsdeck-$$(date -u +%Y%m%dT%H%M%S).sqlite
+
+.PHONY: runner-control-install runner-control-status
+runner-control-install: ## Install the narrow host capacity helper (sudo required)
+	sudo bash deploy/native/install-runner-control.sh
+
+runner-control-status: ## Show the host capacity helper service status
+	systemctl status opsdeck-runner-control --no-pager
 
 .PHONY: import-survey docker-import-survey
 import-survey: ## Validate/import a private survey: make import-survey SURVEY=/path/survey.json

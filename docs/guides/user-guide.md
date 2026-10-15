@@ -50,7 +50,13 @@ Counts cover the configured project sample; they are not instance-wide fleet cou
 
 Each item has evidence and a proposed next step. **Opportunity** identifies a condition in the latest available data. **Verify** needs workload or configuration checks. These labels do not claim that tuning has been applied.
 
-Use the [operations workflow](../operations/maintenance.md#runner-optimization) to compare baseline and changed workloads. The web UI does not format devices or edit runner settings.
+Use the [operations workflow](../operations/maintenance.md#runner-optimization) to compare baseline and changed workloads. The web UI does not format devices. Scheduling settings can be changed through the separately enabled operator controls.
+
+## Operations
+
+Review and apply shared worker limits and optional per-registration scheduling limits. Load a saved image archive from your computer/USB, build from an uploaded context or configured node checkout, and add a local image tag. Images stay in the monitored node's Docker store. See [Operator actions](../operations/operator-actions.md) for enablement, supported archive formats, build profiles, progress and recovery.
+
+Docker, workers, history, images, operation results and audit events have search/filter controls and pagination. Reset controls restore each table's defaults. Summary counters remain totals for the sampled node.
 
 ## Activity & audit
 

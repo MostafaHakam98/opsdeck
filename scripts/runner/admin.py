@@ -1,5 +1,6 @@
 """Administrator-only runner configuration edits; preserve TOML structure and secrets."""
 import argparse
+import copy
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import shutil
 import sys
 import time
 import tomllib
+from types import SimpleNamespace
 
 
 def replace_key(block, key, value, insert_at=0):
@@ -92,6 +94,63 @@ def metrics_config(text):
     return candidate
 
 
+def capacity_config(text, concurrent, runner=None, limit=None, requests=None):
+    """Change only explicitly requested scheduling values, preserving all other TOML."""
+    if type(concurrent) is not int or not 1 <= concurrent <= 32:
+        raise ValueError("Global job limit must be 1..32")
+    if limit is not None and (type(limit) is not int or not 0 <= limit <= 32):
+        raise ValueError("Registration job limit must be 0..32; 0 shares the global limit")
+    if requests is not None and (type(requests) is not int or not 1 <= requests <= 8):
+        raise ValueError("Request concurrency must be 1..8")
+    parsed = tomllib.loads(text)
+    expected = copy.deepcopy(parsed)
+    expected["concurrent"] = concurrent
+    if runner is not None:
+        matches = [r for r in expected.get("runners", []) if r.get("name") == runner]
+        if len(matches) != 1:
+            raise ValueError("Choose a uniquely named runner registration")
+        selected = matches[0]
+        if limit is not None:
+            selected["limit"] = limit
+        if requests is not None:
+            selected["request_concurrency"] = requests
+        # tune always writes request_concurrency; retain its original effective value.
+        request_value = selected.get("request_concurrency", 1)
+        selected["request_concurrency"] = request_value
+        candidate = tune(text, SimpleNamespace(runner=runner, concurrent=concurrent, requests=request_value,
+            limit=limit, cpus=None, memory=None, metrics=False))
+    else:
+        if limit is not None or requests is not None:
+            raise ValueError("Choose a runner registration for registration-specific settings")
+        first_table = re.search(r"(?m)^\s*\[", text)
+        boundary = first_table.start() if first_table else len(text)
+        candidate = replace_key(text[:boundary], "concurrent", str(concurrent)) + text[boundary:]
+    if tomllib.loads(candidate) != expected:
+        raise ValueError("Unsupported configuration layout; no changes applied")
+    return candidate
+
+
+def write_config(path, candidate):
+    """Install a validated candidate atomically with a private, unique backup."""
+    backup = str(path) + ".bak-" + time.strftime("%Y%m%d-%H%M%S") + "-" + str(time.time_ns())
+    with os.fdopen(os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as output:
+        output.write(path.read_bytes())
+    import tempfile
+    descriptor, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=".opsdeck-config-")
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            output.write(candidate)
+            output.flush()
+            os.fsync(output.fileno())
+        shutil.copystat(path, temporary)
+        os.chown(temporary, path.stat().st_uid, path.stat().st_gid)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return backup
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="/etc/gitlab-runner/config.toml")
@@ -125,17 +184,7 @@ def main():
         candidate = tune(text, args)
     sys.stdout.write(json.dumps(safe_facts(tomllib.loads(candidate)), indent=2) + "\n")
     if args.apply and not args.export_only and candidate != text:
-        backup = str(path) + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
-        with os.fdopen(os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as output:
-            output.write(path.read_bytes())
-        temporary = path.with_name(path.name + ".opsdeck-new")
-        try:
-            with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
-                output.write(candidate)
-            shutil.copystat(path, temporary)
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        backup = write_config(path, candidate)
         sys.stdout.write("Backup: " + backup + "\n")
         sys.stdout.write("Runner reloads concurrency automatically; a new metrics listener may require a drained restart.\n")
     if args.facts:

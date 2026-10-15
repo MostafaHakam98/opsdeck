@@ -422,3 +422,279 @@ test("runner metrics and worker states work without GitLab integration", async (
     ),
   ).toBe(true);
 });
+
+test("operator capacity and local archive workflows require reviewed confirmation", async ({
+  page,
+  request,
+}) => {
+  const template = await (
+    await request.get("/api/snapshot", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json();
+  const id = "sha256:" + "a".repeat(64);
+  template.sources.docker = {
+    status: "healthy",
+    data: {
+      images: [{ id, tags: ["toolchain:v1"] }],
+      containers: [],
+      storage: {},
+    },
+  };
+  await page.route("**/api/snapshot", (route) =>
+    route.fulfill({ json: template }),
+  );
+  let concurrent = 4;
+  let uploaded = false;
+  let jobs: any[] = [];
+  await page.route("**/api/operations/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        enabled: true,
+        upload_max_bytes: 1024 ** 3,
+        runner: {
+          available: true,
+          revision: "revision1",
+          facts: {
+            concurrent,
+            runners: [
+              { name: "build-runner", limit: 0, request_concurrency: 4 },
+            ],
+          },
+        },
+        build_profiles: [],
+        uploads: uploaded
+          ? [
+              {
+                id: "b".repeat(32),
+                kind: "image",
+                name: "usb-image.tar",
+                bytes: 7,
+                sha256: "c".repeat(64),
+              },
+            ]
+          : [],
+      },
+    }),
+  );
+  await page.route("**/api/operations/jobs", (route) =>
+    route.fulfill({ json: jobs }),
+  );
+  await page.route("**/api/operations/uploads?**", (route) => {
+    expect(route.request().postDataBuffer()?.toString()).toBe("archive");
+    uploaded = true;
+    return route.fulfill({
+      json: {
+        id: "b".repeat(32),
+        kind: "image",
+        name: "usb-image.tar",
+        bytes: 7,
+        sha256: "c".repeat(64),
+      },
+    });
+  });
+  let action = "";
+  await page.route("**/api/operations/preview", (route) => {
+    const body = route.request().postDataJSON();
+    action = body.action;
+    return route.fulfill({
+      json: {
+        nonce: "review1",
+        action,
+        name:
+          action === "runner_capacity" ? "Runner capacity" : "usb-image.tar",
+        confirmation:
+          action === "runner_capacity"
+            ? "set workers 12"
+            : "load image archive",
+        expires_at: Date.now() / 1000 + 60,
+        impact: "Reviewed operation",
+        values: body.values,
+        ...(action === "runner_capacity"
+          ? {
+              before: { concurrent: 4, runners: [] },
+              after: { concurrent: 12, runners: [] },
+            }
+          : {}),
+      },
+    });
+  });
+  await page.route("**/api/operations/execute", (route) => {
+    const body = route.request().postDataJSON();
+    if (action === "runner_capacity") {
+      expect(body.confirmation).toBe("set workers 12");
+      concurrent = 12;
+      return route.fulfill({ json: { message: "Worker limits saved" } });
+    }
+    expect(body.confirmation).toBe("load image archive");
+    uploaded = false;
+    jobs = [
+      {
+        id: "task1",
+        action: "load_image",
+        name: "usb-image.tar",
+        status: "success",
+        message: "Image loaded",
+        created_at: Date.now() / 1000,
+        updated_at: Date.now() / 1000,
+      },
+    ];
+    return route.fulfill({
+      json: { id: "task1", message: "Task queued; progress appears below" },
+    });
+  });
+  await signIn(page);
+  await page.getByRole("button", { name: "Operations", exact: true }).click();
+  await expect(
+    page.getByLabel("Shared job limit", { exact: true }),
+  ).toHaveValue("4");
+  await page.getByLabel("Shared job limit", { exact: true }).fill("12");
+  await page.getByRole("button", { name: "Review worker limits" }).click();
+  await expect(
+    page.getByRole("region", { name: "Operation preview" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Apply reviewed operation" }),
+  ).toBeDisabled();
+  await page.getByLabel("Operation confirmation").fill("set workers 12");
+  await page.getByRole("button", { name: "Apply reviewed operation" }).click();
+  await expect(page.getByRole("status")).toContainText("Worker limits saved");
+  await page.getByLabel("Saved image archive", { exact: true }).setInputFiles({
+    name: "usb-image.tar",
+    mimeType: "application/x-tar",
+    buffer: Buffer.from("archive"),
+  });
+  await expect(page.getByText("usb-image.tar", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Review image operation" }).click();
+  await page.getByLabel("Operation confirmation").fill("load image archive");
+  await page.getByRole("button", { name: "Apply reviewed operation" }).click();
+  await expect(
+    page.getByRole("cell", { name: "Image loaded", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Image operation status").selectOption("failed");
+  await expect(
+    page.getByText("No operations match these filters."),
+  ).toBeVisible();
+  await page.getByLabel("Image operation status").selectOption("all");
+  await page
+    .getByLabel("Image operation", { exact: true })
+    .selectOption("tag_image");
+  await expect(page.getByLabel("Source image", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "../.tmp/opsdeck-operations-mobile.png",
+    fullPage: true,
+  });
+});
+
+test("worker, image and audit filters narrow results and reset pagination", async ({
+  page,
+  request,
+}) => {
+  const snapshot = await (
+    await request.get("/api/snapshot", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json();
+  snapshot.sources.docker = {
+    status: "healthy",
+    data: {
+      ci_running: 24,
+      storage: {},
+      containers: Array.from({ length: 24 }, (_, i) => ({
+        id: String(i),
+        name: `ci-worker-${i}`,
+        image: "toolchain:v1",
+        state: "running",
+        ci: true,
+        ci_metadata: {
+          role: i === 0 ? "predefined" : "build",
+          project_id: i < 12 ? 1 : 2,
+          job_id: i,
+        },
+      })),
+      images: Array.from({ length: 24 }, (_, i) => ({
+        id: `sha256:${String(i).padStart(64, "0")}`,
+        tags: i === 0 ? [] : [`toolchain:v${i}`],
+        created: i,
+        size_bytes: i * 1000,
+        referencing_containers: i === 1 ? 1 : 0,
+      })),
+      worker_history: [],
+    },
+  };
+  await page.route("**/api/snapshot", (route) =>
+    route.fulfill({ json: snapshot }),
+  );
+  await page.route("**/api/events", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 1,
+          ts: 1,
+          kind: "action",
+          severity: "success",
+          title: "Worker limits saved",
+          detail: "Applied",
+        },
+        {
+          id: 2,
+          ts: 2,
+          kind: "alert",
+          severity: "warning",
+          title: "Storage pressure",
+          detail: "Inspect disk",
+        },
+      ],
+    }),
+  );
+  await signIn(page);
+  await page.getByRole("button", { name: "Runner stack", exact: true }).click();
+  const workers = page.locator("section").filter({
+    has: page.getByRole("heading", {
+      name: "CI workers and helper containers",
+    }),
+  });
+  await expect(workers.locator("tbody tr")).toHaveCount(20);
+  await workers.getByRole("button", { name: "Next page", exact: true }).click();
+  await expect(workers.locator("tbody tr")).toHaveCount(4);
+  await page
+    .getByLabel("Worker role", { exact: true })
+    .selectOption("predefined");
+  await expect(workers.locator("tbody tr")).toHaveCount(1);
+  await page.getByLabel("Search CI workers", { exact: true }).fill("absent");
+  await expect(
+    page.getByText(/No CI containers match these filters/),
+  ).toBeVisible();
+  await workers.getByRole("button", { name: "Reset filters" }).click();
+  await expect(workers.locator("tbody tr")).toHaveCount(20);
+  await page
+    .getByLabel("Image usage", { exact: true })
+    .selectOption("untagged");
+  const images = page.locator("section").filter({
+    has: page.getByRole("heading", {
+      name: "Pipeline and toolchain images on this host",
+    }),
+  });
+  await expect(images.locator("tbody tr")).toHaveCount(1);
+  await expect(images.getByRole("cell", { name: /^Untagged/ })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Activity & audit", exact: true })
+    .click();
+  await page.getByLabel("Event kind", { exact: true }).selectOption("action");
+  await expect(
+    page.getByText("Worker limits saved", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Storage pressure", { exact: true })).toHaveCount(
+    0,
+  );
+  await page
+    .getByLabel("Event severity", { exact: true })
+    .selectOption("critical");
+  await expect(page.getByText("No events match these filters.")).toBeVisible();
+});

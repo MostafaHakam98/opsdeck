@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from backend.actions import Actions
+from backend.operations import Operations
 from backend.collectors import DockerCollector, HostCollector, failure, gitlab_collect, gpu_collect, runner_collect, services_collect
 from backend.config import Settings
 from backend.insights import insights
@@ -30,7 +31,12 @@ class ExecuteRequest(BaseModel):
     confirmation: str = Field(max_length=256)
 
 
-def create_app(settings=None, collect=True, action_factory=None):
+class OperationPreviewRequest(BaseModel):
+    action: str = Field(max_length=32)
+    values: dict = Field(default_factory=dict)
+
+
+def create_app(settings=None, collect=True, action_factory=None, operation_factory=None, runner_client=None):
     settings = settings or Settings()
     settings.validate()
     store = Store(settings.db)
@@ -38,6 +44,7 @@ def create_app(settings=None, collect=True, action_factory=None):
     active_alerts = set()
     auth_attempts = {}
     action_service = Actions(settings.actions, store, action_factory)
+    operations = Operations(settings, store, operation_factory, runner_client)
 
     async def poll(name, fn, interval):
         while True:
@@ -91,6 +98,8 @@ def create_app(settings=None, collect=True, action_factory=None):
     @asynccontextmanager
     async def lifespan(app):
         tasks = []
+        if settings.operations:
+            operations.start()
         if collect:
             host, engine = HostCollector(settings.host_root, settings.procfs_path, settings.scope), DockerCollector()
             tasks = [asyncio.create_task(poll("host", host.collect, settings.interval)),
@@ -104,11 +113,13 @@ def create_app(settings=None, collect=True, action_factory=None):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        operations.stop()
 
     app = FastAPI(title="OpsDeck", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.snapshot = state
     app.state.store = store
     app.state.history_error = None
+    app.state.operations = operations
 
     @app.middleware("http")
     async def headers(request, call_next):
@@ -173,6 +184,30 @@ def create_app(settings=None, collect=True, action_factory=None):
     @app.post("/api/actions/execute", dependencies=[Depends(authenticate)])
     def execute(body: ExecuteRequest):
         return action_service.execute(body.nonce, body.confirmation)
+
+    @app.get("/api/operations/capabilities", dependencies=[Depends(authenticate)])
+    def capabilities():
+        return operations.capabilities()
+
+    @app.get("/api/operations/jobs", dependencies=[Depends(authenticate)])
+    def operation_jobs():
+        return store.operations()
+
+    @app.post("/api/operations/preview", dependencies=[Depends(authenticate)])
+    def operation_preview(body: OperationPreviewRequest):
+        return operations.preview(body.action, body.values)
+
+    @app.post("/api/operations/execute", dependencies=[Depends(authenticate)])
+    def operation_execute(body: ExecuteRequest):
+        return operations.execute(body.nonce, body.confirmation)
+
+    @app.post("/api/operations/uploads", dependencies=[Depends(authenticate)])
+    async def operation_upload(request: Request, kind: str = Query(pattern="^(image|context)$"), name: str = Query(max_length=120)):
+        return await operations.receive_upload(request, kind, name)
+
+    @app.post("/api/operations/uploads/{identifier}/discard", dependencies=[Depends(authenticate)])
+    def discard_upload(identifier: str):
+        return operations.discard_upload(identifier)
 
     @app.get("/api/metrics", dependencies=[Depends(authenticate)])
     def metrics():

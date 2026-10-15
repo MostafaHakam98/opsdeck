@@ -14,6 +14,7 @@ class Store:
             db.execute("CREATE TABLE IF NOT EXISTS samples (ts REAL PRIMARY KEY, payload TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, ts REAL, kind TEXT, severity TEXT, title TEXT, detail TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, first_seen REAL, last_seen REAL, payload TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS operations (id TEXT PRIMARY KEY, created_at REAL, updated_at REAL, status TEXT, payload TEXT)")
 
     def connect(self):
         return sqlite3.connect(self.path, timeout=10)
@@ -74,3 +75,24 @@ class Store:
         with self.connect() as db:
             return [{**json.loads(payload), "first_seen": first_seen, "last_seen": last_seen} for first_seen, last_seen, payload in
                 db.execute("SELECT first_seen,last_seen,payload FROM workers ORDER BY last_seen DESC LIMIT ?", (limit,))]
+
+    def operation(self, identifier, status, payload, create=False):
+        now = time.time()
+        with self.connect() as db:
+            if create:
+                db.execute("INSERT INTO operations VALUES (?,?,?,?,?)", (identifier, now, now, status, json.dumps(payload)))
+                db.execute("DELETE FROM operations WHERE id NOT IN (SELECT id FROM operations ORDER BY created_at DESC LIMIT 200) AND status NOT IN ('queued','running')")
+            else:
+                db.execute("UPDATE operations SET updated_at=?,status=?,payload=? WHERE id=?", (now, status, json.dumps(payload), identifier))
+
+    def operations(self, limit=50):
+        with self.connect() as db:
+            return [{"id": row[0], "created_at": row[1], "updated_at": row[2], "status": row[3], **json.loads(row[4])}
+                for row in db.execute("SELECT * FROM operations ORDER BY created_at DESC LIMIT ?", (limit,))]
+
+    def recover_operations(self):
+        with self.connect() as db:
+            count = db.execute("SELECT COUNT(*) FROM operations WHERE status IN ('queued','running')").fetchone()[0]
+            db.execute("UPDATE operations SET status='unknown',updated_at=?,payload=json_set(payload,'$.message',?) WHERE status IN ('queued','running')",
+                (time.time(), "Application restarted during this operation; inspect live state before retrying"))
+        return count
