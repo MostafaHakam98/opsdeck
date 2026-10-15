@@ -55,6 +55,8 @@ def test_docker_catalog_exposes_only_allowed_ci_labels(monkeypatch):
         "State": "exited", "Status": "Exited", "Created": 1,
         "Labels": {"com.gitlab.gitlab-runner.job.id": "123", "com.gitlab.gitlab-runner.job.token": "do-not-expose"}}
     api = SimpleNamespace(containers=lambda **kw: [container], images=lambda **kw: [{"Id": "sha256:image", "RepoTags": ["example/toolchain:v1"], "Size": 1024, "Created": 1}])
+    environment = {"CI_PIPELINE_ID": "456", "CI_PROJECT_ID": "3", "CI_JOB_TOKEN": "do-not-expose"}
+    api.inspect_container = lambda _: {"Config": {"Env": [f"{key}={value}" for key, value in environment.items()]}}
     client = SimpleNamespace(api=api, info=lambda: {"Driver": "overlay2"}, close=lambda: None,
         df=lambda: {"Images": [], "Volumes": [{"Name": "cache", "UsageData": {"Size": -1}}]})
     monkeypatch.setattr("backend.collectors.docker.from_env", lambda **kw: client)
@@ -62,6 +64,7 @@ def test_docker_catalog_exposes_only_allowed_ci_labels(monkeypatch):
     assert result["status"] == "healthy"
     assert result["data"]["images"][0]["referencing_containers"] == 1
     assert result["data"]["containers"][0]["ci_metadata"]["job_id"] == "123"
+    assert result["data"]["containers"][0]["ci_metadata"]["pipeline_id"] == "456"
     assert result["data"]["storage"]["volumes"][0]["size_bytes"] is None
     assert "do-not-expose" not in json.dumps(result)
 

@@ -23,6 +23,7 @@ export default defineConfig({
       GITLAB_URL: "",
       GITLAB_TOKEN: "",
       GITLAB_PROJECT_IDS: "",
+      OPSDECK_GITLAB_CONNECTION_FILE: "/tmp/opsdeck-e2e-no-gitlab.json",
     },
   },
 });

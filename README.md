@@ -27,6 +27,8 @@ For NVIDIA telemetry, configure the node's NVIDIA Container Toolkit and run `mak
 - NVIDIA utilization, VRAM, temperature, power, and driver version.
 - Private survey pipeline outcomes, job timing comparisons, complete source evidence, and optimization follow-ups without a GitLab connection.
 - Runner telemetry and optional read-only GitLab pipeline/job integration.
+- Global and repository/pipeline/image scopes, paginated workload tables, and observed image usage by project.
+- Named live survey checkpoints with scoped comparisons, source freshness, and JSON export.
 - Retained charts, integration freshness, threshold alerts, optimization evidence, and action history.
 
 Missing integrations stay explicit. The dashboard labels its collection scope. GitLab is read-only; container stop/restart actions are disabled by default and require an opt-in label, typed confirmation, current-state validation, and a one-use preview.
@@ -62,6 +64,7 @@ Application code lives in `backend/` and `frontend/`; deployment assets are grou
 | [User guide](docs/guides/user-guide.md) | Every page, chart, threshold, and action |
 | [Configuration](docs/guides/configuration.md) | Environment reference and integrations |
 | [Runner surveys](docs/operations/surveys.md) | Private benchmark imports, recorded evidence, and current optimization checks |
+| [Live surveys](docs/operations/live-surveys.md) | Global filters, project/image attribution, checkpoints, and optional GitLab setup |
 | [Deployment](docs/operations/deployment.md) | Docker, Compose, GPU, native, offline, and cluster guidance |
 | [Operations](docs/operations/maintenance.md) | Health, logs, backup/restore, updates, and optimization |
 | [Architecture](docs/architecture/overview.md) | Data flow, API, permissions, and limits |

@@ -48,3 +48,25 @@ def test_runner_rejects_unrelated_http_success(monkeypatch):
     result = runner_collect(Settings())
     assert result["status"] == "unavailable"
     assert "no recognized runner metrics" in result["message"]
+
+
+def test_gitlab_history_reports_end_and_details_every_pipeline(monkeypatch):
+    original = httpx.Client
+    def respond(request):
+        assert request.method == "GET"
+        path = request.url.path
+        if path.endswith("/projects/42"):
+            payload = {"id": 42, "path_with_namespace": "team/project"}
+        elif path.endswith("/pipelines"):
+            assert request.url.params.get("status") or request.url.params.get("page") == "2"
+            payload = [] if request.url.params.get("status") else [{"id": i, "status": "success", "ref": "feature"} for i in range(4)]
+        elif path.endswith("/jobs"):
+            payload = []
+        else:
+            payload = {"duration": 90, "queued_duration": 0}
+        return httpx.Response(200, json=payload)
+    monkeypatch.setattr(httpx, "Client", lambda *args, **kwargs: original(*args, **kwargs, transport=httpx.MockTransport(respond)))
+    result = gitlab_collect(Settings(gitlab_url="https://gitlab.example", gitlab_token="test", projects=["42"]), history_page=2)
+    assert result["status"] == "healthy"
+    assert result["data"]["history"] == [{"project_id": 42, "page": 2, "count": 4, "has_more": False}]
+    assert [p["duration"] for p in result["data"]["pipelines"]] == [90]*4

@@ -1,5 +1,7 @@
 # Private runner surveys and pipeline benchmarks
 
+For continuous project/pipeline observation and manual UI checkpoints, use [Live surveys and project dashboards](live-surveys.md). The imported optimization report discussed below is separate historical evidence.
+
 OpsDeck can retain a runner survey without connecting to GitLab. Use this for the measured baseline, optimization rounds, job outcomes, cancellation notes, cold-cache caveats, and open follow-ups.
 
 **Survey & benchmarks** shows recorded outcomes and timings. **Runner stack** shows live Docker workers, local image tags, toolchain availability, cache volumes, and their storage paths. The Overview strip counts identified running CI containers, including build/helper/service containers; this is not a GitLab queue count.

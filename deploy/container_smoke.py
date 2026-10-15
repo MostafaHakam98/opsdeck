@@ -36,9 +36,12 @@ def main():
             return subprocess.run(command, cwd=root, env=env, check=True, text=True,
                 stdout=subprocess.PIPE if capture else None, timeout=120)
 
-        def request(path, authenticate=True):
+        def request(path, authenticate=True, data=None):
             headers = {"Authorization": "Bearer " + token} if authenticate else {}
-            with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{args.port}/{path}", headers=headers), timeout=5) as response:
+            if data is not None:
+                headers["Content-Type"] = "application/json"
+            body = json.dumps(data).encode() if data is not None else None
+            with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{args.port}/{path}", headers=headers, data=body), timeout=5) as response:
                 return json.load(response)
 
         def wait_for(predicate, timeout=45):
@@ -67,11 +70,16 @@ def main():
                 assert error.code == 401
             snapshot = wait_for(healthy_snapshot)
             assert snapshot["sources"]["host"]["data"]["scope"] == "container"
+            assert request("api/workloads?kind=images&size=1")["size"] == 1
+            assert "token" not in request("api/integrations/gitlab")
+            checkpoint = request("api/checkpoints", data={"title": "Container persistence checkpoint"})
             wait_for(lambda: request("api/history"))
             run([*base, "exec", "-T", "opsdeck", "python", "-c",
                 "import sqlite3; db=sqlite3.connect('/data/opsdeck.sqlite'); db.execute('CREATE TABLE smoke_marker (value INTEGER)'); db.execute('INSERT INTO smoke_marker VALUES (42)'); db.commit()"])
             run([*base, "restart", "opsdeck"])
             wait_for(lambda: request("healthz", False)["status"] == "ok")
+            assert request("api/checkpoints/" + checkpoint["id"])["title"] == checkpoint["title"]
+            assert request("api/checkpoints")[0]["id"] == checkpoint["id"]
             run([*base, "exec", "-T", "opsdeck", "python", "-c",
                 "import os,sqlite3; assert os.getuid()==12001; db=sqlite3.connect('/data/opsdeck.sqlite'); assert db.execute('SELECT value FROM smoke_marker').fetchone()[0]==42"])
             run([*base, "down"])
@@ -81,7 +89,7 @@ def main():
             assert any(v["mount"] == "/" for v in snapshot["sources"]["host"]["data"]["volumes"])
             wait_for(lambda: request("api/snapshot")["sources"]["docker"]["status"] == "healthy")
             assert not snapshot["actions_enabled"]
-            sys.stdout.write("Compose smoke passed: authentication, non-root runtime, persistent history, and host/Docker scope.\n")
+            sys.stdout.write("Compose smoke passed: authentication, non-root runtime, persistent history/checkpoints, workload API, and host/Docker scope.\n")
         except Exception:
             run([*base, "logs", "--tail", "30", "opsdeck"])
             raise

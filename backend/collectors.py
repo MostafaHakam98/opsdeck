@@ -238,6 +238,20 @@ def gpu_collect():
         return failure(exc, "GPU driver or NVIDIA device is unavailable")
 
 
+def ci_environment(environment):
+    """Retain only named public CI identifiers; never retain the raw environment."""
+    fields = {"CI_PROJECT_ID": "project_id", "CI_PROJECT_PATH": "project_path", "CI_JOB_ID": "job_id",
+        "CI_JOB_NAME": "job_name", "CI_PIPELINE_ID": "pipeline_id", "CI_COMMIT_REF_NAME": "ref", "CI_RUNNER_ID": "runner_id"}
+    result = {}
+    for entry in environment:
+        key, separator, value = entry.partition("=")
+        if separator and key in fields and len(value) <= 512:
+            if fields[key].endswith("_id") and not value.isdigit():
+                continue
+            result[fields[key]] = value
+    return result
+
+
 class DockerCollector:
     def __init__(self):
         self.previous = {}
@@ -245,6 +259,7 @@ class DockerCollector:
         self.storage_at = 0
         self.images = []
         self.images_at = 0
+        self.ci_metadata = {}
 
     def collect(self):
         try:
@@ -262,6 +277,18 @@ class DockerCollector:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                     current_stats.update(pool.map(stats, running))
                 rows = []
+                ci_candidates = [c for c in containers if any(k.startswith("com.gitlab.gitlab-runner") for k in (c.get("Labels") or {})) or any(n.lstrip("/").startswith("runner-") for n in c.get("Names", []))]
+                def metadata_for(container):
+                    try:
+                        environment = client.api.inspect_container(container["Id"]).get("Config", {}).get("Env") or []
+                        return container["Id"], ci_environment(environment)
+                    except docker.errors.DockerException:
+                        return container["Id"], None
+                missing = [c for c in ci_candidates if c["Id"] not in self.ci_metadata][:16]
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                    for identifier, metadata in pool.map(metadata_for, missing):
+                        if metadata is not None:
+                            self.ci_metadata[identifier] = metadata
                 for c in containers[:200]:
                     s = current_stats.get(c["Id"])
                     cpu = None
@@ -280,13 +307,15 @@ class DockerCollector:
                         limit = m.get("limit")
                     labels = c.get("Labels") or {}
                     ci_fields = {"job_id": "job.id", "job_name": "job.name", "project_id": "job.project.id", "project_path": "job.project.path", "runner_id": "runner.id", "role": "type"}
-                    metadata = {key: labels["com.gitlab.gitlab-runner." + field] for key, field in ci_fields.items() if "com.gitlab.gitlab-runner." + field in labels}
+                    metadata = {**self.ci_metadata.get(c["Id"], {}), **{key: labels["com.gitlab.gitlab-runner." + field] for key, field in ci_fields.items() if "com.gitlab.gitlab-runner." + field in labels}}
                     rows.append({"id": c["Id"], "name": (c.get("Names") or [c["Id"][:12]])[0].lstrip("/"), "image": c["Image"],
-                        "state": c["State"], "status": c["Status"], "created": c["Created"], "cpu_percent": cpu,
+                        "image_id": c.get("ImageID"), "state": c["State"], "status": c["Status"], "created": c["Created"], "cpu_percent": cpu,
                         "memory_bytes": memory, "memory_limit": limit, "managed": labels.get("opsdeck.managed") == "true",
                         "ci": any(k.startswith("com.gitlab.gitlab-runner") for k in labels) or any(n.lstrip("/").startswith("runner-") for n in c.get("Names", [])), "ci_metadata": metadata,
                         "ports": [{"private": p.get("PrivatePort"), "public": p.get("PublicPort"), "type": p.get("Type")} for p in c.get("Ports", [])]})
                 self.previous = {k: v for k, v in self.previous.items() if k in current_stats}
+                visible_ids = {c["Id"] for c in containers}
+                self.ci_metadata = {k: v for k, v in self.ci_metadata.items() if k in visible_ids}
                 if not self.images or time.monotonic() - self.images_at > 30:
                     image_data = client.api.images(all=True)
                     self.images = [{"id": image["Id"], "tags": image.get("RepoTags") or [], "size_bytes": image.get("Size"),
@@ -352,10 +381,10 @@ def runner_collect(settings):
         return source({"metrics": {}, "facts": facts}, "unavailable", f"Runner metrics endpoint unavailable ({type(exc).__name__}); enable its local metrics listener")
 
 
-def gitlab_collect(settings):
+def gitlab_collect(settings, history_page=1):
     if not settings.gitlab_url or not settings.gitlab_token or not settings.projects:
         return source({"projects": [], "pipelines": [], "jobs": []}, "not_configured", "Set GITLAB_URL, GITLAB_TOKEN (read_api), and GITLAB_PROJECT_IDS on the server")
-    projects, pipelines, jobs, errors = [], [], [], []
+    projects, pipelines, jobs, errors, history = [], [], [], [], []
     with httpx.Client(base_url=settings.gitlab_url + "/api/v4/", headers={"PRIVATE-TOKEN": settings.gitlab_token}, timeout=8, follow_redirects=False) as client:
         def get(path, params=None):
             response = client.get(path, params=params)
@@ -367,20 +396,20 @@ def gitlab_collect(settings):
                 meta = get(prefix)
                 name = meta["path_with_namespace"]
                 projects.append({"id": meta["id"], "name": name, "url": meta.get("web_url")})
-                recent = get(prefix + "/pipelines", {"per_page": 10})
+                recent = get(prefix + "/pipelines", {"per_page": 10, "page": history_page})
+                history.append({"project_id": meta["id"], "page": history_page, "count": len(recent), "has_more": len(recent) == 10})
                 active = get(prefix + "/pipelines", {"per_page": 20, "status": "running"}) + get(prefix + "/pipelines", {"per_page": 20, "status": "pending"})
                 candidates = {p["id"]: p for p in recent + active}
                 for p in candidates.values():
                     detailed = p
-                    if p["status"] in ("running", "pending") or p["id"] in [r["id"] for r in recent[:3]]:
-                        detailed = get(prefix + f"/pipelines/{p['id']}")
-                    pipelines.append({"id": p["id"], "project": name, "status": p["status"], "ref": p["ref"], "url": p.get("web_url"),
-                        "created_at": p.get("created_at"), "duration": detailed.get("duration"), "queued_duration": detailed.get("queued_duration")})
+                    detailed = get(prefix + f"/pipelines/{p['id']}")
+                    pipelines.append({"id": p["id"], "project_id": meta["id"], "project": name, "status": p["status"], "ref": p["ref"], "url": p.get("web_url"),
+                        "created_at": p.get("created_at"), "started_at": detailed.get("started_at"), "finished_at": detailed.get("finished_at"), "duration": detailed.get("duration"), "queued_duration": detailed.get("queued_duration")})
                     if p["status"] in ("running", "pending") or (recent and p["id"] == recent[0]["id"]):
                         for page in range(1, 4):
                             batch = get(prefix + f"/pipelines/{p['id']}/jobs", {"per_page": 100, "page": page})
                             for j in batch:
-                                jobs.append({"id": j["id"], "pipeline": p["id"], "project": name, "name": j["name"], "status": j["status"],
+                                jobs.append({"id": j["id"], "pipeline": p["id"], "project_id": meta["id"], "project": name, "name": j["name"], "status": j["status"],
                                     "duration": j.get("duration"), "queued_duration": j.get("queued_duration"), "url": j.get("web_url"),
                                     "runner": (j.get("runner") or {}).get("description"), "created_at": j.get("created_at")})
                             if len(batch) < 100:
@@ -388,5 +417,5 @@ def gitlab_collect(settings):
             except (httpx.HTTPError, KeyError, ValueError) as exc:
                 errors.append(f"Project {project}: read failed ({type(exc).__name__}); check access and connectivity")
     return source({"projects": projects, "pipelines": pipelines, "jobs": jobs,
-        "errors": errors, "scope": "Latest 10 pipelines plus up to 20 running and 20 pending per project; up to 300 jobs per selected pipeline"},
+        "history": history, "errors": errors, "scope": "Selected page of 10 pipelines plus up to 20 running and 20 pending per project; up to 300 jobs per selected pipeline"},
         "degraded" if errors else "healthy", "; ".join(errors) or None)

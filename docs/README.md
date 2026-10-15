@@ -14,6 +14,7 @@ Start with [Getting started](guides/getting-started.md), then use the guides bel
 | [Troubleshooting](guides/troubleshooting.md) | Diagnose missing metrics, startup failures, port conflicts, and database issues |
 | [Runner surveys](operations/surveys.md) | Retain private pipeline benchmarks and optimization evidence without a GitLab connection |
 | [Runner telemetry](operations/runner-telemetry.md) | Enable local runner metrics, inspect limits, and distinguish active workers from retained containers |
+| [Live surveys and project dashboards](operations/live-surveys.md) | Global/project/pipeline/image scopes, optional GitLab results, retained checkpoints and comparisons |
 | [Operator actions](operations/operator-actions.md) | Change worker limits, load USB/image archives, build and tag local images, and filter inventories |
 
 OpsDeck monitors one node per application instance. It does not aggregate an entire Kubernetes or HPC cluster into one dashboard.

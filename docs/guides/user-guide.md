@@ -14,6 +14,10 @@ The resource strip shows CPU use, memory use, the first GPU's utilization, and c
 
 **Needs attention** summarizes active thresholds and unavailable telemetry. **Integration coverage** opens Connections. **Storage headroom** shows mounted filesystem capacity; **Export snapshot** downloads a JSON snapshot without server integration credentials.
 
+## Project and pipeline scope
+
+Use the repository, pipeline, image and evidence-window selectors to switch from global workload views to selected evidence. **Projects & pipelines** provides server pagination and project/image usage. **Survey & benchmarks** can capture and compare live checkpoints; its imported report remains historical. See [Live surveys](../operations/live-surveys.md). Node hardware readings and shared runner limits remain global.
+
 ## Host & hardware
 
 - **Host facts:** node name, collection scope, operating system, uptime, load, CPU frequency, process count, swap, and page cache.

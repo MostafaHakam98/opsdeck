@@ -252,8 +252,8 @@ test("survey evidence and observed worker history remain distinct", async ({
             image: "example:ci",
             state: "no_longer_visible",
             status: "Job outcome unknown",
-            first_seen: 1,
-            last_seen: 2,
+            first_seen: Date.now() / 1000 - 60,
+            last_seen: Date.now() / 1000,
             cpu_peak: 80,
             memory_peak: 1024,
           },
@@ -697,4 +697,203 @@ test("worker, image and audit filters narrow results and reset pagination", asyn
     .getByLabel("Event severity", { exact: true })
     .selectOption("critical");
   await expect(page.getByText("No events match these filters.")).toBeVisible();
+});
+
+test("repository filters, workload pagination and image drilldown share scope", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const projects = [
+    { id: "3", name: "team/alpha" },
+    { id: "4", name: "team/beta" },
+  ];
+  const image = {
+    key: "sha256:alpha",
+    tags: ["toolchain:alpha"],
+    projects: ["3"],
+    pipelines: ["3:101"],
+    present: true,
+  };
+  await page.route("**/api/workloads?**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const project = params.get("project") || "all",
+      kind = params.get("kind") || "pipelines";
+    const all = Array.from({ length: 25 }, (_, i) => ({
+      key: `3:${101 + i}`,
+      id: 101 + i,
+      project_key: "3",
+      project: "team/alpha",
+      status: "success",
+      source: "gitlab",
+      outcome_known: true,
+      duration: 60,
+      queued_duration: 2,
+      images: [image.key],
+      last_seen: Date.now() / 1000,
+    }));
+    const rows =
+      project === "4"
+        ? []
+        : kind === "images"
+          ? [
+              {
+                ...image,
+                id: image.key,
+                size_bytes: 100,
+                observed_containers: 3,
+              },
+            ]
+          : all;
+    const number = Number(params.get("page") || 1);
+    await route.fulfill({
+      json: {
+        scope: { project, pipeline: "all", image: "all", hours: 24 },
+        summary: {
+          projects: project === "all" ? 2 : 1,
+          running_containers: 0,
+          observed_jobs: 3,
+          pipelines: rows.length,
+          successful_pipelines: rows.length,
+          unknown_outcomes: 0,
+        },
+        rows: rows.slice((number - 1) * 20, number * 20),
+        page: number,
+        size: 20,
+        total: rows.length,
+        catalog: { projects, pipelines: all, images: [image] },
+        worker_metadata: {},
+        coverage: { gitlab_status: "healthy", note: "Test evidence" },
+      },
+    });
+  });
+  await signIn(page);
+  await page
+    .getByRole("button", { name: "Projects & pipelines", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "#101", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Next page", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "#121", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Repository scope", { exact: true }).selectOption("4");
+  await expect(
+    page.getByText("No matching retained records.", { exact: false }),
+  ).toBeVisible();
+  await page.getByLabel("Repository scope", { exact: true }).selectOption("3");
+  await page.getByLabel("Workload table").selectOption("images");
+  await expect(
+    page.getByRole("cell", { name: /toolchain:alpha/ }).first(),
+  ).toBeVisible();
+  await page.getByLabel("Image scope", { exact: true }).selectOption(image.key);
+  await expect(page.getByLabel("Image scope", { exact: true })).toHaveValue(
+    image.key,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("real API captures, compares and exports manual survey checkpoints", async ({
+  page,
+}) => {
+  const suffix = Date.now();
+  await signIn(page);
+  await page
+    .getByRole("button", { name: "Survey & benchmarks", exact: true })
+    .click();
+  await page
+    .getByLabel("Checkpoint name", { exact: true })
+    .fill(`Before ${suffix}`);
+  await page.getByLabel("Checkpoint notes").fill("Before workload change");
+  await page
+    .getByRole("button", { name: "Save current checkpoint", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    `Checkpoint saved: Before ${suffix}`,
+  );
+  await page
+    .getByLabel("Checkpoint name", { exact: true })
+    .fill(`After ${suffix}`);
+  await page
+    .getByRole("button", { name: "Save current checkpoint", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    `Checkpoint saved: After ${suffix}`,
+  );
+  const before = await page
+    .getByLabel("Baseline checkpoint")
+    .locator("option")
+    .filter({ hasText: `Before ${suffix}` })
+    .getAttribute("value");
+  const after = await page
+    .getByLabel("Result checkpoint")
+    .locator("option")
+    .filter({ hasText: `After ${suffix}` })
+    .getAttribute("value");
+  await page.getByLabel("Baseline checkpoint").selectOption(before!);
+  await page.getByLabel("Result checkpoint").selectOption(after!);
+  await page.getByRole("button", { name: "Compare saved checkpoints" }).click();
+  await expect(
+    page.getByRole("cell", { name: "Node CPU utilization", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/different workloads do not establish/),
+  ).toBeVisible();
+  await page.getByLabel("Search checkpoints").fill(`After ${suffix}`);
+  const download = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export checkpoint", exact: true })
+    .click();
+  const value = JSON.parse(
+    await readFile((await (await download).path())!, "utf8"),
+  );
+  expect(value.title).toBe(`After ${suffix}`);
+  expect(value.scope.project).toBe("all");
+  expect(value.source_health).toBeDefined();
+});
+
+test("optional GitLab setup sends credentials once and clears the input", async ({
+  page,
+}) => {
+  let saved = false;
+  await page.route("**/api/integrations/gitlab", async (route) => {
+    if (route.request().method() === "POST") {
+      const value = route.request().postDataJSON();
+      expect(value.token).toBe("fake-browser-read-only-token");
+      expect(value.projects).toEqual(["team/alpha", "4"]);
+      saved = true;
+    }
+    await route.fulfill({
+      json: {
+        enabled: saved,
+        url: saved ? "https://gitlab.example.com" : "",
+        token_configured: saved,
+        projects: [],
+        auto_observed: true,
+        project_limit: 32,
+      },
+    });
+  });
+  await signIn(page);
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await page
+    .getByLabel("GitLab URL", { exact: true })
+    .fill("https://gitlab.example.com");
+  await page
+    .getByLabel("GitLab read-only token")
+    .fill("fake-browser-read-only-token");
+  await page.getByLabel("GitLab project scope").fill("team/alpha\n4");
+  await page
+    .getByRole("button", { name: "Save and validate read-only connection" })
+    .click();
+  await expect(page.getByText(/Read-only connection saved/)).toBeVisible();
+  await expect(page.getByLabel("GitLab read-only token")).toHaveValue("");
+  expect(saved).toBe(true);
 });

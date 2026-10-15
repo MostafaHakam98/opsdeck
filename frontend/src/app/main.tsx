@@ -64,12 +64,26 @@ import { RunnerTelemetry } from "../features/runners/RunnerTelemetry";
 import { OperatorConsole } from "../features/operations/OperatorConsole";
 import { EventHistory } from "../features/operations/EventHistory";
 import { Pager } from "../components/Pager";
+import {
+  useWorkloads,
+  matchesScope,
+  defaultScope,
+  type Scope,
+} from "../features/workloads/useWorkloads";
+import {
+  ScopeControls,
+  WorkloadSummary,
+} from "../features/workloads/ScopeControls";
+import { WorkloadExplorer } from "../features/workloads/WorkloadExplorer";
+import { LiveCheckpoints } from "../features/workloads/LiveCheckpoints";
+import { GitLabSetup } from "../features/workloads/GitLabSetup";
 
 const pages = [
   { id: "overview", title: "Overview", icon: LayoutDashboard },
   { id: "host", title: "Host & hardware", icon: Server },
   { id: "docker", title: "Docker", icon: Box },
   { id: "gitlab", title: "Runner stack", icon: GitBranch },
+  { id: "projects", title: "Projects & pipelines", icon: ClipboardList },
   { id: "survey", title: "Survey & benchmarks", icon: ClipboardList },
   { id: "optimization", title: "Optimization", icon: Zap },
   { id: "operations", title: "Operations", icon: SlidersHorizontal },
@@ -341,6 +355,8 @@ function App() {
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [scope, setScope] = useState<Scope>(defaultScope);
+  const workload = useWorkloads(token, scope, refresh);
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController();
@@ -400,12 +416,73 @@ function App() {
     );
   const sources = snapshot?.sources || {};
   const host = sources.host?.data;
-  const docker = sources.docker?.data;
+  const allDocker = sources.docker?.data;
+  const scoped =
+    scope.project !== "all" ||
+    scope.pipeline !== "all" ||
+    scope.image !== "all";
+  const scopedImages = new Set(
+    (workload.data?.catalog.images || [])
+      .filter(
+        (image) =>
+          (scope.project === "all" || image.projects.includes(scope.project)) &&
+          (scope.pipeline === "all" ||
+            image.pipelines.includes(scope.pipeline)) &&
+          (scope.image === "all" || image.key === scope.image),
+      )
+      .map((image) => image.key),
+  );
+  const scopedContainers = (allDocker?.containers || []).filter((row: any) =>
+    matchesScope(row, scope, workload.data),
+  );
+  const docker = allDocker
+    ? {
+        ...allDocker,
+        containers: scoped ? scopedContainers : allDocker.containers,
+        total_containers: scoped
+          ? scopedContainers.length
+          : allDocker.total_containers,
+        ci_running: scoped
+          ? scopedContainers.filter(
+              (row: any) => row.ci && row.state === "running",
+            ).length
+          : allDocker.ci_running,
+        images: scoped
+          ? (allDocker.images || []).filter((row: any) =>
+              scopedImages.has(row.id),
+            )
+          : allDocker.images,
+        worker_history: (allDocker.worker_history || []).filter((row: any) =>
+          matchesScope(row, scope, workload.data),
+        ),
+      }
+    : allDocker;
+  const archiveRepository = sources.findings?.data?.context?.repository;
+  const archiveMatches =
+    scope.project === "all" ||
+    scope.project === archiveRepository ||
+    workload.data?.catalog.projects.find(
+      (project) => project.id === scope.project,
+    )?.name === archiveRepository;
   const gitlab = sources.gitlab?.data;
   const gpu = sources.gpu?.data?.[0];
   const containers: any[] = docker?.containers || [];
-  const jobs: any[] = gitlab?.jobs || [];
-  const pipelines: any[] = gitlab?.pipelines || [];
+  const selectedImage = workload.data?.catalog.images.find(
+    (row) => row.key === scope.image,
+  );
+  const pipelineMatches = (row: any) => {
+    const project = String(row.project_id || row.project);
+    const key = `${project}:${row.pipeline ?? row.id}`;
+    return (
+      (scope.project === "all" ||
+        scope.project === project ||
+        scope.project === row.project) &&
+      (scope.pipeline === "all" || scope.pipeline === key) &&
+      (scope.image === "all" || selectedImage?.pipelines.includes(key))
+    );
+  };
+  const jobs: any[] = (gitlab?.jobs || []).filter(pipelineMatches);
+  const pipelines: any[] = (gitlab?.pipelines || []).filter(pipelineMatches);
   const alerts = snapshot?.alerts || [];
   const connected = Object.values(sources).filter(
     (s) => s.status === "healthy" && !s.stale,
@@ -454,7 +531,15 @@ function App() {
   const exportSnapshot = () =>
     download(
       "opsdeck-snapshot.json",
-      JSON.stringify(snapshot, null, 2),
+      JSON.stringify(
+        {
+          ...snapshot,
+          dashboard_scope: scope,
+          workload_summary: workload.data?.summary,
+        },
+        null,
+        2,
+      ),
       "application/json",
     );
   const stats = (
@@ -652,6 +737,21 @@ function App() {
               text="Collectors run independently. Your first host sample will appear shortly."
             />
           )}
+          <ScopeControls
+            scope={scope}
+            setScope={setScope}
+            view={workload.data}
+            error={workload.error}
+          />
+          {page === "projects" && (
+            <WorkloadExplorer
+              onScope={setScope}
+              token={token}
+              scope={scope}
+              view={workload.data}
+              onRefresh={() => setRefresh((value) => value + 1)}
+            />
+          )}
           {page === "overview" && (
             <>
               <SourceNotice source={sources.host} name="Host" />
@@ -668,6 +768,7 @@ function App() {
                   </div>
                 </div>
               )}
+              <WorkloadSummary view={workload.data} />
               {stats}
               {sources.findings?.data && (
                 <div className="notice">
@@ -1360,7 +1461,40 @@ function App() {
               onChanged={() => setRefresh((value) => value + 1)}
             />
           )}
-          {page === "survey" && <SurveyPage source={sources.findings} />}
+          {page === "survey" && (
+            <>
+              <LiveCheckpoints
+                token={token}
+                scope={scope}
+                view={workload.data}
+                onChanged={() => setRefresh((value) => value + 1)}
+              />
+              <div className="notice">
+                <div>
+                  <strong>
+                    Imported benchmark evidence
+                    {archiveRepository ? ` · ${archiveRepository}` : ""}
+                  </strong>
+                  <p>
+                    This dated report is separate from live checkpoints and
+                    follows repository scope. Its recorded pipeline comparisons
+                    keep their original scope.
+                  </p>
+                </div>
+              </div>
+              {archiveMatches ? (
+                <SurveyPage source={sources.findings} />
+              ) : (
+                <div className="empty">
+                  <p>
+                    No imported benchmark report is available for this
+                    repository. Use live checkpoints above, or choose All
+                    repositories to read the original report.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
           {page === "optimization" && (
             <RecordedOptimizations archive={sources.findings?.data} />
           )}
@@ -1380,7 +1514,7 @@ function App() {
               />
               <RunnerInventory
                 docker={docker}
-                archive={sources.findings?.data}
+                archive={archiveMatches ? sources.findings?.data : undefined}
                 host={host}
               />
             </>
@@ -1658,6 +1792,10 @@ function App() {
           )}
           {page === "connections" && (
             <>
+              <GitLabSetup
+                token={token}
+                onChanged={() => setRefresh((value) => value + 1)}
+              />
               <div className="connection-grid">
                 {Object.entries(sources).map(([key, s]) => (
                   <Panel

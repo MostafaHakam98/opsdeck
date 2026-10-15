@@ -15,6 +15,9 @@ class Store:
             db.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, ts REAL, kind TEXT, severity TEXT, title TEXT, detail TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, first_seen REAL, last_seen REAL, payload TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS operations (id TEXT PRIMARY KEY, created_at REAL, updated_at REAL, status TEXT, payload TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS pipelines (id TEXT PRIMARY KEY, updated_at REAL, payload TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS pipeline_jobs (id TEXT PRIMARY KEY, updated_at REAL, payload TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS checkpoints (id TEXT PRIMARY KEY, created_at REAL, payload TEXT)")
 
     def connect(self):
         return sqlite3.connect(self.path, timeout=10)
@@ -96,3 +99,40 @@ class Store:
             db.execute("UPDATE operations SET status='unknown',updated_at=?,payload=json_set(payload,'$.message',?) WHERE status IN ('queued','running')",
                 (time.time(), "Application restarted during this operation; inspect live state before retrying"))
         return count
+
+    def observed_project_ids(self):
+        with self.connect() as db:
+            rows = db.execute("SELECT DISTINCT json_extract(payload,'$.ci_metadata.project_id') FROM workers WHERE json_extract(payload,'$.ci_metadata.project_id') IS NOT NULL LIMIT 32")
+            return [str(row[0]) for row in rows if str(row[0]).isdigit()]
+
+    def observe_gitlab(self, data, retention):
+        now = time.time()
+        with self.connect() as db:
+            for table, rows in (("pipelines", data.get("pipelines", [])), ("pipeline_jobs", data.get("jobs", []))):
+                for row in rows:
+                    identifier = str(row.get("project_id") or row.get("project")) + ":" + str(row["id"])
+                    old = db.execute(f"SELECT payload FROM {table} WHERE id=?", (identifier,)).fetchone()
+                    merged = {**(json.loads(old[0]) if old else {}), **{k: v for k, v in row.items() if v is not None}}
+                    merged.update(source="gitlab", confirmed_at=now)
+                    db.execute(f"INSERT OR REPLACE INTO {table} VALUES (?,?,?)", (identifier, now, json.dumps(merged)))
+                db.execute(f"DELETE FROM {table} WHERE updated_at < ?", (now - retention * 86400,))
+
+    def pipeline_records(self, jobs=False):
+        table = "pipeline_jobs" if jobs else "pipelines"
+        with self.connect() as db:
+            return [json.loads(row[0]) for row in db.execute(f"SELECT payload FROM {table} ORDER BY updated_at DESC LIMIT 10000")]
+
+    def save_checkpoint(self, identifier, payload):
+        with self.connect() as db:
+            db.execute("INSERT INTO checkpoints VALUES (?,?,?)", (identifier, payload["created_at"], json.dumps(payload, allow_nan=False)))
+            db.execute("DELETE FROM checkpoints WHERE id NOT IN (SELECT id FROM checkpoints ORDER BY created_at DESC LIMIT 200)")
+
+    def checkpoints(self):
+        with self.connect() as db:
+            return [{"id": row[0], "created_at": row[1], "title": row[2], "notes": row[3], "scope": json.loads(row[4]), "summary": json.loads(row[5])}
+                for row in db.execute("SELECT id,created_at,json_extract(payload,'$.title'),json_extract(payload,'$.notes'),json_extract(payload,'$.scope'),json_extract(payload,'$.summary') FROM checkpoints ORDER BY created_at DESC LIMIT 200")]
+
+    def checkpoint(self, identifier):
+        with self.connect() as db:
+            row = db.execute("SELECT payload FROM checkpoints WHERE id=?", (identifier,)).fetchone()
+            return json.loads(row[0]) if row else None

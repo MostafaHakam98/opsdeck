@@ -31,6 +31,7 @@ Collectors poll independently in background tasks, with blocking reads in worker
 | `backend/config.py`, `backend/run.py` | Environment settings and one-worker launcher |
 | `backend/store.py` | SQLite samples, averaged history buckets, audit events |
 | `backend/actions.py` | Ownership validation, previews, expiry, replay protection, execution |
+| `backend/workloads.py`, `backend/gitlab_connection.py` | Retained workload attribution, scoped checkpoints, and private read-only GitLab setup |
 | `backend/operations.py` | Runner-control client, bounded uploads, operation previews and serialized local image tasks |
 | `frontend/src/app/` | Dashboard entry point, page wiring, and application styles |
 | `frontend/src/features/runners/`, `frontend/src/lib/` | Runner/survey views, API client, formatting helpers |
@@ -66,7 +67,7 @@ The browser and API share an origin in production. Responses include content sec
 
 ## Permissions
 
-GitLab is read-only. Credentials stay in server configuration and are removed from exported integration error messages. Runner facts pass an allowlist before exposure. Process arguments/environments, Docker environment variables, and raw container logs are not collected.
+GitLab is read-only. Credentials stay in server configuration and are removed from exported integration error messages. Runner facts pass an allowlist before exposure. Process arguments/environments, raw Docker environments, and raw container logs are not retained. Only allowlisted public CI identifiers are retained for job/project/pipeline attribution.
 
 Actions require the managed label and current container identity. Runner-named containers, GitLab-labeled jobs, and OpsDeck itself are excluded. These checks protect against operator mistakes; users who already control the Docker socket can alter labels and have extensive host control. A socket mount marked read-only still permits API requests.
 
@@ -80,7 +81,7 @@ Host Compose has explicit node access; portable Compose does not. The applicatio
 - Host/history: default 10-second interval. Docker/GPU/runner/services: at least 15 seconds. Survey files: 30 seconds. Optional GitLab: 60 seconds.
 - Docker inventory: 200 containers; stats: 64 running containers. Disk usage: five-minute cache.
 - Processes: top 15 by resident memory. GPU history: first detected device; hardware view: every device.
-- GitLab: at most eight projects and bounded pipeline/job samples, as documented in configuration.
+- GitLab: at most 32 projects and bounded pipeline/job samples, as documented in configuration.
 - Charts use averaged buckets. Missing values remain null; peaks are available in the history response.
 - No centralized log search, alert delivery, SMART integration, cache hit-rate instrumentation, Kubernetes API collector, custom thresholds, or arbitrary command execution.
 
