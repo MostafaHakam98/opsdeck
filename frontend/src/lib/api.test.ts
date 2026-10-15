@@ -10,6 +10,8 @@ describe("operator-facing metric formatting", () => {
   it("formats capacities and durations consistently", () => {
     expect(bytes(1024 ** 3)).toBe("1.0 GiB");
     expect(duration(125)).toBe("2m 5s");
+    expect(duration(4344)).toBe("1h 12m 24s");
+    expect(duration(119.9)).toBe("2m 0s");
     expect(duration(90000)).toBe("1d 1h");
   });
   it("rejects script links from integration metadata", () => {

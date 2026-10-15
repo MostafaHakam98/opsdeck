@@ -96,11 +96,12 @@ export function pct(value: number | null | undefined) {
 }
 export function duration(value: number | null | undefined) {
   if (value == null) return "—";
+  value = Math.round(value);
   if (value < 60) return `${Math.round(value)}s`;
   if (value < 3600)
     return `${Math.floor(value / 60)}m ${Math.round(value % 60)}s`;
   if (value < 86400)
-    return `${Math.floor(value / 3600)}h ${Math.floor((value % 3600) / 60)}m`;
+    return `${Math.floor(value / 3600)}h ${Math.floor((value % 3600) / 60)}m ${value % 60}s`;
   return `${Math.floor(value / 86400)}d ${Math.floor((value % 86400) / 3600)}h`;
 }
 export function safeUrl(url: string | undefined) {
