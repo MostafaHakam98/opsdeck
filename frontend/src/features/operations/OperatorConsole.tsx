@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { api, bytes, uploadArchive, type Upload } from "../../lib/api";
 import { Pager } from "../../components/Pager";
+import { tone } from "../../components/Status";
 
 type Facts = {
   concurrent: number;
@@ -726,9 +727,7 @@ export function OperatorConsole({
                         <small>{job.action.replaceAll("_", " ")}</small>
                       </td>
                       <td>
-                        <span
-                          className={`badge ${job.status === "success" ? "good" : job.status === "failed" ? "bad" : "muted"}`}
-                        >
+                        <span className={`badge ${tone(job.status)}`}>
                           {job.status}
                         </span>
                       </td>

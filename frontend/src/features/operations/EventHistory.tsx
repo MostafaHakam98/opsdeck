@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Activity, ShieldCheck } from "lucide-react";
 import { type Event } from "../../lib/api";
 import { Pager } from "../../components/Pager";
+import { tone } from "../../components/Status";
 export function EventHistory({ events }: { events: Event[] }) {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("all");
@@ -81,9 +82,7 @@ export function EventHistory({ events }: { events: Event[] }) {
                   {new Date(event.ts * 1000).toLocaleString()} · {event.kind}
                 </small>
               </div>
-              <span
-                className={`badge ${event.severity === "success" ? "good" : event.severity === "critical" ? "bad" : "muted"}`}
-              >
+              <span className={`badge ${tone(event.severity)}`}>
                 {event.severity}
               </span>
             </div>

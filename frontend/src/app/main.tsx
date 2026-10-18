@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Thermometer,
+  Timer,
   TriangleAlert,
   X,
   Zap,
@@ -77,42 +78,105 @@ import {
 import { WorkloadExplorer } from "../features/workloads/WorkloadExplorer";
 import { LiveCheckpoints } from "../features/workloads/LiveCheckpoints";
 import { GitLabSetup } from "../features/workloads/GitLabSetup";
+import { Badge, tone } from "../components/Status";
+import {
+  ThemeToggle,
+  applyTheme,
+  storedTheme,
+} from "../components/ThemeToggle";
+
+applyTheme(storedTheme());
 
 const pages = [
-  { id: "overview", title: "Overview", icon: LayoutDashboard },
-  { id: "host", title: "Host & hardware", icon: Server },
-  { id: "docker", title: "Docker", icon: Box },
-  { id: "gitlab", title: "Runner stack", icon: GitBranch },
-  { id: "projects", title: "Projects & pipelines", icon: ClipboardList },
-  { id: "survey", title: "Survey & benchmarks", icon: ClipboardList },
-  { id: "optimization", title: "Optimization", icon: Zap },
-  { id: "operations", title: "Operations", icon: SlidersHorizontal },
-  { id: "activity", title: "Activity & audit", icon: Activity },
-  { id: "connections", title: "Connections", icon: Settings },
+  {
+    id: "overview",
+    title: "Overview",
+    icon: LayoutDashboard,
+    group: "Monitor",
+    scoped: true,
+    description:
+      "A live picture of capacity, workloads, and what needs attention.",
+  },
+  {
+    id: "host",
+    title: "Host & hardware",
+    icon: Server,
+    group: "Monitor",
+    description:
+      "CPU, memory, storage, network, GPU, services and processes on this node.",
+  },
+  {
+    id: "docker",
+    title: "Docker",
+    icon: Box,
+    group: "Monitor",
+    scoped: true,
+    description:
+      "Containers, images and build cache in this node's Docker engine.",
+  },
+  {
+    id: "gitlab",
+    title: "Runner stack",
+    icon: GitBranch,
+    group: "CI runner",
+    scoped: true,
+    description:
+      "Runner health, CI workers, toolchain images and cache volumes on this node.",
+  },
+  {
+    id: "projects",
+    title: "Projects & pipelines",
+    icon: ClipboardList,
+    group: "CI runner",
+    scoped: true,
+    description: "Repositories, pipelines and images observed on this runner.",
+  },
+  {
+    id: "survey",
+    title: "Survey & benchmarks",
+    icon: Timer,
+    group: "CI runner",
+    scoped: true,
+    description:
+      "Capture live checkpoints and compare them with recorded benchmark runs.",
+  },
+  {
+    id: "optimization",
+    title: "Optimization",
+    icon: Zap,
+    group: "CI runner",
+    description: "Measured opportunities and the next step for each resource.",
+  },
+  {
+    id: "operations",
+    title: "Operations",
+    icon: SlidersHorizontal,
+    group: "Manage",
+    description:
+      "Change runner capacity and manage local images. Every change is reviewed before it runs.",
+  },
+  {
+    id: "activity",
+    title: "Activity & audit",
+    icon: Activity,
+    group: "Manage",
+    description: "Active threshold alerts and the history of every action.",
+  },
+  {
+    id: "connections",
+    title: "Connections",
+    icon: Settings,
+    group: "Manage",
+    description:
+      "Know what is connected, how fresh it is, and what to configure.",
+  },
 ];
-const good = new Set([
-  "healthy",
-  "running",
-  "active",
-  "success",
-  "passed",
-  "accepted",
-]);
-const bad = new Set(["critical", "failed", "unavailable", "unhealthy"]);
-function Badge({ value }: { value: string }) {
-  return (
-    <span
-      className={`badge ${good.has(value) ? "good" : bad.has(value) ? "bad" : "muted"}`}
-    >
-      <i />
-      {value.replaceAll("_", " ")}
-    </span>
-  );
-}
+const groups = [...new Set(pages.map((p) => p.group))];
+
 function SourceNotice({ source, name }: { source?: Source; name: string }) {
   if (!source || (source.status === "healthy" && !source.stale)) return null;
   return (
-    <div className="notice">
+    <div className={`notice ${tone(source.stale ? "stale" : source.status)}`}>
       <TriangleAlert size={18} />
       <div>
         <strong>
@@ -128,16 +192,23 @@ function SourceNotice({ source, name }: { source?: Source; name: string }) {
     </div>
   );
 }
+/** Usage bars keep their series color until a threshold turns them amber or red. */
 function Meter({
   value,
   color = "blue",
+  warnAt = 75,
+  badAt = 90,
 }: {
   value?: number | null;
   color?: string;
+  warnAt?: number;
+  badAt?: number;
 }) {
+  const level =
+    value == null ? "" : value >= badAt ? "bad" : value >= warnAt ? "warn" : "";
   return (
     <div
-      className={`meter ${color}`}
+      className={`meter ${level || color}`}
       role="meter"
       aria-label="Usage"
       aria-valuemin={0}
@@ -205,7 +276,7 @@ function Chart({
           data={history}
           margin={{ top: 12, right: 8, left: 0, bottom: 0 }}
         >
-          <CartesianGrid stroke="#e7edf2" vertical={false} />
+          <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="ts"
             tickFormatter={(v) =>
@@ -214,7 +285,7 @@ function Chart({
                 minute: "2-digit",
               })
             }
-            tick={{ fill: "#65758a", fontSize: 11 }}
+            tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
             minTickGap={60}
             axisLine={false}
             tickLine={false}
@@ -223,7 +294,7 @@ function Chart({
             width={48}
             domain={percent ? [0, 100] : [0, "auto"]}
             tickFormatter={(v) => (percent ? `${v}%` : bytes(v))}
-            tick={{ fill: "#65758a", fontSize: 11 }}
+            tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
           />
@@ -233,7 +304,13 @@ function Chart({
               percent ? pct(Number(v)) : `${bytes(Number(v))}/s`,
               name,
             ]}
-            contentStyle={{ border: "1px solid #dce5ee", borderRadius: 8 }}
+            contentStyle={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              color: "var(--text)",
+            }}
+            labelStyle={{ color: "var(--text-muted)" }}
           />
           {keys.map(([key, label, color]) =>
             percent ? (
@@ -244,7 +321,7 @@ function Chart({
                 name={label}
                 stroke={color}
                 fill={color}
-                fillOpacity={0.06}
+                fillOpacity={0.12}
                 strokeWidth={2}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -282,6 +359,9 @@ function SignIn({ onSignIn }: { onSignIn: (token: string) => void }) {
   const [busy, setBusy] = useState(false);
   return (
     <main className="login">
+      <div className="login-theme">
+        <ThemeToggle />
+      </div>
       <div className="login-brand">
         <Gauge size={38} />
         <span>OpsDeck</span>
@@ -487,7 +567,8 @@ function App() {
   const connected = Object.values(sources).filter(
     (s) => s.status === "healthy" && !s.stale,
   ).length;
-  const title = pages.find((p) => p.id === page)?.title || "Overview";
+  const current = pages.find((p) => p.id === page) || pages[0];
+  const title = current.title;
   const latest = sources.host?.updated_at;
   const ciKnown = sources.gitlab?.status === "healthy";
   const filteredContainers = containers
@@ -621,28 +702,37 @@ function App() {
         </a>
         <div className="workspace-label">Infrastructure workspace</div>
         <nav aria-label="Main navigation">
-          {pages.map((p) => (
-            <button
-              key={p.id}
-              aria-label={p.title}
-              aria-current={page === p.id ? "page" : undefined}
-              className={page === p.id ? "active" : ""}
-              onClick={() => {
-                setPage(p.id);
-                setQuery("");
-              }}
-            >
-              <p.icon size={18} />
-              {p.title}
-              {p.id === "activity" && alerts.length > 0 && (
-                <span className="nav-count">{alerts.length}</span>
-              )}
-            </button>
+          {groups.map((group) => (
+            <div className="nav-group" key={group}>
+              <span className="nav-group-label">{group}</span>
+              {pages
+                .filter((p) => p.group === group)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    aria-label={p.title}
+                    aria-current={page === p.id ? "page" : undefined}
+                    className={page === p.id ? "active" : ""}
+                    onClick={() => {
+                      setPage(p.id);
+                      setQuery("");
+                    }}
+                  >
+                    <p.icon size={18} />
+                    {p.title}
+                    {p.id === "activity" && alerts.length > 0 && (
+                      <span className="nav-count">{alerts.length}</span>
+                    )}
+                  </button>
+                ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
           <div className="host-chip">
-            <span className="status-dot" />
+            <span
+              className={`status-dot ${error ? "bad" : Object.values(sources).some((s) => s.stale || tone(s.status) === "bad") ? "warn" : "good"}`}
+            />
             <div>
               <strong>{host?.hostname || "Connecting to host"}</strong>
               <small>
@@ -661,9 +751,10 @@ function App() {
         <header className="topbar">
           <span>
             <Server size={15} />
-            Single-host workspace
+            {host?.hostname || "Single-host workspace"}
           </span>
           <div>
+            <ThemeToggle />
             <span className={`live ${error ? "offline" : ""}`}>
               <i />
               {error
@@ -692,15 +783,7 @@ function App() {
           <div className="page-heading">
             <div>
               <h1>{title}</h1>
-              <p>
-                {page === "overview"
-                  ? "A live picture of capacity, workloads, and what needs attention."
-                  : page === "optimization"
-                    ? "Measured opportunities and the next step for each resource."
-                    : page === "connections"
-                      ? "Know what is connected, how fresh it is, and what to configure."
-                      : "Inspect the details behind your infrastructure."}
-              </p>
+              <p>{current.description}</p>
             </div>
             <button
               className="secondary"
@@ -737,12 +820,14 @@ function App() {
               text="Collectors run independently. Your first host sample will appear shortly."
             />
           )}
-          <ScopeControls
-            scope={scope}
-            setScope={setScope}
-            view={workload.data}
-            error={workload.error}
-          />
+          {current.scoped && (
+            <ScopeControls
+              scope={scope}
+              setScope={setScope}
+              view={workload.data}
+              error={workload.error}
+            />
+          )}
           {page === "projects" && (
             <WorkloadExplorer
               onScope={setScope}
@@ -771,7 +856,7 @@ function App() {
               <WorkloadSummary view={workload.data} />
               {stats}
               {sources.findings?.data && (
-                <div className="notice">
+                <div className="notice info">
                   <ClipboardList size={18} />
                   <div>
                     <strong>Your runner speedup report</strong>
@@ -809,9 +894,9 @@ function App() {
                   <Chart
                     history={history}
                     keys={[
-                      ["cpu", "CPU", "#3169c6"],
-                      ["memory", "Memory", "#8768b1"],
-                      ["gpu", "GPU 0", "#14857f"],
+                      ["cpu", "CPU", "var(--series-1)"],
+                      ["memory", "Memory", "var(--series-2)"],
+                      ["gpu", "GPU 0", "var(--series-3)"],
                     ]}
                   />
                 </Panel>
@@ -819,14 +904,14 @@ function App() {
                   <div className="attention">
                     {alerts.length ? (
                       alerts.slice(0, 5).map((a) => (
-                        <div key={a.key}>
+                        <div key={a.key} className={tone(a.severity)}>
                           <TriangleAlert size={18} />
                           <strong>{a.title}</strong>
                           <p>{a.detail}</p>
                         </div>
                       ))
                     ) : (
-                      <div>
+                      <div className="good">
                         <Check size={22} />
                         <strong>No threshold alerts in available data</strong>
                         <p>
@@ -880,10 +965,7 @@ function App() {
                             {bytes(v.free)} free of {bytes(v.total)}
                           </span>
                         </div>
-                        <Meter
-                          value={v.percent}
-                          color={v.percent > 85 ? "red" : "blue"}
-                        />
+                        <Meter value={v.percent} warnAt={85} badAt={95} />
                         <small>
                           {v.device} · {v.fstype} · {pct(v.percent)} used
                         </small>
@@ -981,7 +1063,11 @@ function App() {
                           )[key]
                         }
                       </span>
-                      <Meter value={host?.pressure?.[key]?.some?.avg60} />
+                      <Meter
+                        value={host?.pressure?.[key]?.some?.avg60}
+                        warnAt={10}
+                        badAt={25}
+                      />
                       <strong>{pct(host?.pressure?.[key]?.some?.avg60)}</strong>
                     </div>
                   ))}
@@ -1011,7 +1097,7 @@ function App() {
                           <td>{bytes(v.total)}</td>
                           <td>{bytes(v.free)}</td>
                           <td>
-                            <Meter value={v.percent} />
+                            <Meter value={v.percent} warnAt={85} badAt={95} />
                             {pct(v.percent)}
                           </td>
                           <td>{pct(v.inode_percent)}</td>
@@ -1457,7 +1543,7 @@ function App() {
           {page === "operations" && (
             <OperatorConsole
               token={token}
-              images={docker?.images || []}
+              images={allDocker?.images || []}
               onChanged={() => setRefresh((value) => value + 1)}
             />
           )}
@@ -1469,7 +1555,8 @@ function App() {
                 view={workload.data}
                 onChanged={() => setRefresh((value) => value + 1)}
               />
-              <div className="notice">
+              <div className="notice info">
+                <ClipboardList size={18} />
                 <div>
                   <strong>
                     Imported benchmark evidence
@@ -1765,7 +1852,7 @@ function App() {
                 {alerts.length ? (
                   <div className="event-list">
                     {alerts.map((a) => (
-                      <div key={a.key}>
+                      <div key={a.key} className={tone(a.severity)}>
                         <TriangleAlert size={18} />
                         <div>
                           <strong>{a.title}</strong>

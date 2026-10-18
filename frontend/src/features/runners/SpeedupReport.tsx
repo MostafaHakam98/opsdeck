@@ -8,6 +8,7 @@ import {
   timingRows,
   type Benchmark,
 } from "./benchmarks";
+import { tone } from "../../components/Status";
 
 export function SpeedupReport({ archive }: { archive: any }) {
   const measured: Benchmark[] = archive.benchmarks.filter(
@@ -84,7 +85,15 @@ export function SpeedupReport({ archive }: { archive: any }) {
       <div className="speedup-cards">
         <div>
           <span>Execution speedup</span>
-          <strong>
+          <strong
+            className={
+              execution?.factor == null
+                ? ""
+                : execution.factor >= 1
+                  ? "tone-good"
+                  : "tone-bad"
+            }
+          >
             {execution?.factor == null
               ? "—"
               : `${execution.factor.toFixed(2)}×`}
@@ -96,7 +105,15 @@ export function SpeedupReport({ archive }: { archive: any }) {
         </div>
         <div>
           <span>Runner work reduction</span>
-          <strong>
+          <strong
+            className={
+              work?.reductionPercent == null
+                ? ""
+                : work.reductionPercent >= 0
+                  ? "tone-good"
+                  : "tone-bad"
+            }
+          >
             {work?.reductionPercent == null
               ? "—"
               : `${work.reductionPercent.toFixed(1)}%`}
@@ -108,7 +125,9 @@ export function SpeedupReport({ archive }: { archive: any }) {
         </div>
         <div>
           <span>Jobs slower in this comparison</span>
-          <strong>{regressions.length}</strong>
+          <strong className={regressions.length ? "tone-warn" : "tone-good"}>
+            {regressions.length}
+          </strong>
           <p>
             {regressions.length
               ? regressions.map((job: any) => job.name).join(", ")
@@ -118,7 +137,13 @@ export function SpeedupReport({ archive }: { archive: any }) {
         </div>
         <div>
           <span>Optimizations verified on this host</span>
-          <strong>
+          <strong
+            className={
+              verified === archive.optimizations.length
+                ? "tone-good"
+                : "tone-warn"
+            }
+          >
             {verified}/{archive.optimizations.length}
           </strong>
           <p>Current independent checks</p>
@@ -196,9 +221,7 @@ export function SpeedupReport({ archive }: { archive: any }) {
                       <small>{item.note}</small>
                     </td>
                     <td>
-                      <span
-                        className={`badge ${item.kind === "measured" ? "good" : "muted"}`}
-                      >
+                      <span className={`badge ${tone(item.kind)}`}>
                         {item.kind}
                       </span>
                     </td>

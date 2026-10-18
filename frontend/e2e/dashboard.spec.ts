@@ -897,3 +897,29 @@ test("optional GitLab setup sends credentials once and clears the input", async 
   await expect(page.getByLabel("GitLab read-only token")).toHaveValue("");
   expect(saved).toBe(true);
 });
+test("theme choice applies dark tokens, persists, and returns to system", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await signIn(page);
+  const background = () =>
+    page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const light = await background();
+  await page.getByRole("radio", { name: "Dark theme" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(await background()).not.toBe(light);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByRole("radio", { name: "Dark theme" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await page.getByRole("radio", { name: "Match system theme" }).click();
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
+  expect(await background()).toBe(light);
+  await page.emulateMedia({ colorScheme: "dark" });
+  expect(await background()).not.toBe(light);
+});

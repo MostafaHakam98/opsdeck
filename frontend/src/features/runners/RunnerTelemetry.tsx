@@ -1,4 +1,5 @@
 import { type Source } from "../../lib/api";
+import { tone } from "../../components/Status";
 
 export function RunnerTelemetry({
   source,
@@ -19,7 +20,9 @@ export function RunnerTelemetry({
       <div className="speedup-cards">
         <div>
           <span>Runner service</span>
-          <strong>{service?.state || "Unknown"}</strong>
+          <strong className={`tone-${tone(service?.state)}`}>
+            {service?.state || "Unknown"}
+          </strong>
           <small>
             {service
               ? `${service.name} · ${service.substate}`
@@ -28,7 +31,9 @@ export function RunnerTelemetry({
         </div>
         <div>
           <span>Metrics endpoint</span>
-          <strong>
+          <strong
+            className={`tone-${tone(healthy ? "healthy" : source?.stale ? "stale" : "unavailable")}`}
+          >
             {healthy ? "Available" : source?.stale ? "Stale" : "Unavailable"}
           </strong>
           <small>Separate from service health and Docker activity</small>
@@ -44,7 +49,7 @@ export function RunnerTelemetry({
         </div>
       </div>
       {!healthy && (
-        <div className="notice">
+        <div className="notice warn">
           <div>
             <strong>Enable the runner’s local metrics exporter</strong>
             <p>{source?.message || "Waiting for runner metrics."}</p>

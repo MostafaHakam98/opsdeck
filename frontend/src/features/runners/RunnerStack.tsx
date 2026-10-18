@@ -13,16 +13,30 @@ import { Box, ClipboardList, Search, Server } from "lucide-react";
 import { bytes, duration, safeUrl, type Source } from "../../lib/api";
 import { SpeedupReport } from "./SpeedupReport";
 import { Pager } from "../../components/Pager";
+import { tone } from "../../components/Status";
 
 function Section({
   title,
   note,
   children,
+  collapsed = false,
 }: {
   title: string;
   note?: string;
   children: ReactNode;
+  /** Reference sections start closed so the page stays scannable. */
+  collapsed?: boolean;
 }) {
+  if (collapsed)
+    return (
+      <details className="panel collapsible">
+        <summary className="panel-heading">
+          <h2>{title}</h2>
+          {note && <span>{note}</span>}
+        </summary>
+        {children}
+      </details>
+    );
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -35,11 +49,7 @@ function Section({
 }
 function Pill({ value }: { value: string }) {
   return (
-    <span
-      className={`badge ${["success", "done", "verified", "running"].includes(value) ? "good" : ["failed", "not_applied"].includes(value) ? "bad" : "muted"}`}
-    >
-      {value.replaceAll("_", " ")}
-    </span>
+    <span className={`badge ${tone(value)}`}>{value.replaceAll("_", " ")}</span>
   );
 }
 function Empty({ text }: { text: string }) {
@@ -174,29 +184,48 @@ export function SurveyPage({ source }: { source?: Source }) {
                 data={benchmarks}
                 margin={{ top: 20, right: 20, left: 0, bottom: 10 }}
               >
-                <CartesianGrid vertical={false} stroke="#e7edf2" />
-                <XAxis dataKey="label" />
-                <YAxis unit="m" />
+                <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
+                  stroke="var(--border-strong)"
+                />
+                <YAxis
+                  unit="m"
+                  tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
+                  stroke="var(--border-strong)"
+                />
                 <Tooltip
                   formatter={(v: any) => `${Number(v).toFixed(1)} minutes`}
+                  cursor={{ fill: "var(--surface-3)" }}
+                  contentStyle={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    color: "var(--text)",
+                  }}
                 />
-                <Legend />
+                <Legend wrapperStyle={{ color: "var(--text-muted)" }} />
                 <Bar
                   dataKey="execution"
                   name="Observed execution wall time"
-                  fill="#3169c6"
+                  fill="var(--series-1)"
                 />
                 <Bar
                   dataKey="queue"
                   name="First-job queue wait"
-                  fill="#9d7d43"
+                  fill="var(--series-4)"
                 />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </Section>
       )}
-      <Section title="Job-by-job timing comparison" note="Recorded seconds">
+      <Section
+        title="Job-by-job timing comparison"
+        note="Recorded seconds"
+        collapsed
+      >
         <div className="table-wrap">
           <table>
             <thead>
@@ -298,7 +327,7 @@ export function SurveyPage({ source }: { source?: Source }) {
         </Section>
       )}
       <RecordedOptimizations archive={archive} />
-      <Section title="Recorded notes and follow-ups">
+      <Section title="Recorded notes and follow-ups" collapsed>
         <div className="recorded-notes">
           {archive.notes.map((note: string, i: number) => (
             <p key={i}>{note}</p>
@@ -841,7 +870,7 @@ export function RunnerInventory({
         </p>
       </Section>
       {archive?.image_checks?.length > 0 && (
-        <Section title="Survey toolchain availability">
+        <Section title="Survey toolchain availability" collapsed>
           <div className="table-wrap">
             <table>
               <thead>
@@ -875,6 +904,7 @@ export function RunnerInventory({
       <Section
         title="Runner cache and Docker volumes"
         note="Disk-usage data refreshes every five minutes"
+        collapsed
       >
         {docker?.storage?.volumes?.length ? (
           <div className="table-wrap">

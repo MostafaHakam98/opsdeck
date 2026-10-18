@@ -8,6 +8,12 @@ The dashboard refreshes every 10 seconds. Individual collectors have their own s
 
 A dash is an unavailable measurement, not zero. Check integration coverage before interpreting a quiet dashboard.
 
+## Theme and status colors
+
+Use the switch in the top bar to follow the system theme or pin light or dark mode. The choice is remembered in this browser.
+
+Colors carry one meaning on every page: green is healthy or passed, amber is stale, pending, or needs a check, red is failed, unavailable, or critical, blue is guidance, and grey has no data or is not configured. Usage bars keep their series color until they cross a threshold (75% amber, 90% red; storage uses the 85% and 95% alert thresholds, pressure stalls 10% and 25%).
+
 ## Overview
 
 The resource strip shows CPU use, memory use, the first GPU's utilization, and currently running CI containers identified on the host. **Capacity over time** supports hour, day, week, and month views. Charts show bucket averages; the history API also retains peak values.
@@ -16,7 +22,7 @@ The resource strip shows CPU use, memory use, the first GPU's utilization, and c
 
 ## Project and pipeline scope
 
-Use the repository, pipeline, image and evidence-window selectors to switch from global workload views to selected evidence. **Projects & pipelines** provides server pagination and project/image usage. **Survey & benchmarks** can capture and compare live checkpoints; its imported report remains historical. See [Live surveys](../operations/live-surveys.md). Node hardware readings and shared runner limits remain global.
+The scope bar appears on Overview, Docker, Runner stack, Projects & pipelines, and Survey & benchmarks; it is tinted while a filter is active. Use the repository, pipeline, image and evidence-window selectors to switch from global workload views to selected evidence. **Projects & pipelines** provides server pagination and project/image usage. **Survey & benchmarks** can capture and compare live checkpoints; its imported report remains historical. See [Live surveys](../operations/live-surveys.md). Node hardware readings and shared runner limits remain global.
 
 ## Host & hardware
 

@@ -3,6 +3,7 @@ import { api, bytes, duration, safeUrl } from "../../lib/api";
 import { Pager } from "../../components/Pager";
 import { scopeQuery, type Scope, type WorkloadView } from "./useWorkloads";
 import { WorkloadSummary } from "./ScopeControls";
+import { tone } from "../../components/Status";
 export function WorkloadExplorer({
   token,
   scope,
@@ -216,9 +217,7 @@ export function WorkloadExplorer({
                           )}
                         </td>
                         <td>
-                          <span
-                            className={`badge ${row.status === "success" ? "good" : row.status === "failed" ? "bad" : "muted"}`}
-                          >
+                          <span className={`badge ${tone(row.status)}`}>
                             {row.status.replaceAll("_", " ")}
                           </span>
                           <small>

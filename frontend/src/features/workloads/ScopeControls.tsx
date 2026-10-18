@@ -17,8 +17,16 @@ export function ScopeControls({
       (scope.project === "all" || row.projects.includes(scope.project)) &&
       (scope.pipeline === "all" || row.pipelines.includes(scope.pipeline)),
   );
+  const filtered =
+    scope.project !== defaultScope.project ||
+    scope.pipeline !== defaultScope.pipeline ||
+    scope.image !== defaultScope.image ||
+    scope.hours !== defaultScope.hours;
   return (
-    <section className="scope-controls" aria-label="Dashboard scope">
+    <section
+      className={`scope-controls ${filtered ? "filtered" : ""}`}
+      aria-label="Dashboard scope"
+    >
       <div className="scope-fields">
         <label>
           Repository
@@ -107,13 +115,25 @@ export function ScopeControls({
             <option value={0}>All retained observations</option>
           </select>
         </label>
-        <button onClick={() => setScope(defaultScope)}>Reset scope</button>
+        <button
+          className="secondary"
+          disabled={!filtered}
+          onClick={() => setScope(defaultScope)}
+        >
+          Reset scope
+        </button>
       </div>
       <p>
-        Workload tables follow this scope. Hardware charts and shared worker
-        limits describe the whole node.
+        {filtered
+          ? "Filtered: workload tables show only the selected evidence. "
+          : ""}
+        Hardware charts and shared worker limits always describe the whole node.
       </p>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
     </section>
   );
 }
