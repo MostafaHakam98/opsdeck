@@ -1,3 +1,4 @@
+import { PaginatedList } from "../../components/PaginatedList";
 import { useEffect, useState } from "react";
 import { api, bytes, download, duration } from "../../lib/api";
 import { Pager } from "../../components/Pager";
@@ -379,34 +380,44 @@ export function LiveCheckpoints({
         </div>
         {comparison && (
           <>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Measurement</th>
-                    <th>{comparison.before.title}</th>
-                    <th>{comparison.after.title}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {metrics.map((metric) => (
-                    <tr key={metric.key}>
-                      <td>{metric.name}</td>
-                      {[comparison.before, comparison.after].map((row) => {
-                        const value = (row as any)[metric.group]?.[metric.key];
-                        return (
-                          <td key={row.id}>
-                            {metric.format
-                              ? metric.format(value)
-                              : (value ?? "—")}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <PaginatedList
+              items={metrics as any[]}
+              label="Checkpoint measurements"
+              resetKey={`${comparison.before.id}:${comparison.after.id}`}
+            >
+              {(pageRows) => (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Measurement</th>
+                        <th>{comparison.before.title}</th>
+                        <th>{comparison.after.title}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageRows.map((metric) => (
+                        <tr key={metric.key}>
+                          <td>{metric.name}</td>
+                          {[comparison.before, comparison.after].map((row) => {
+                            const value = (row as any)[metric.group]?.[
+                              metric.key
+                            ];
+                            return (
+                              <td key={row.id}>
+                                {metric.format
+                                  ? metric.format(value)
+                                  : (value ?? "—")}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedList>
             <p className="panel-description">{comparison.note}</p>
           </>
         )}

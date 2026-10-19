@@ -1,3 +1,9 @@
+import { PaginatedList } from "../components/PaginatedList";
+import {
+  SupportOverview,
+  ResourceDiagnostics,
+  PipelineDiagnostics,
+} from "../features/diagnostics/Diagnostics";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -26,6 +32,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Thermometer,
+  Timer,
   TriangleAlert,
   X,
   Zap,
@@ -77,42 +84,105 @@ import {
 import { WorkloadExplorer } from "../features/workloads/WorkloadExplorer";
 import { LiveCheckpoints } from "../features/workloads/LiveCheckpoints";
 import { GitLabSetup } from "../features/workloads/GitLabSetup";
+import { Badge, tone } from "../components/Status";
+import {
+  ThemeToggle,
+  applyTheme,
+  storedTheme,
+} from "../components/ThemeToggle";
+
+applyTheme(storedTheme());
 
 const pages = [
-  { id: "overview", title: "Overview", icon: LayoutDashboard },
-  { id: "host", title: "Host & hardware", icon: Server },
-  { id: "docker", title: "Docker", icon: Box },
-  { id: "gitlab", title: "Runner stack", icon: GitBranch },
-  { id: "projects", title: "Projects & pipelines", icon: ClipboardList },
-  { id: "survey", title: "Survey & benchmarks", icon: ClipboardList },
-  { id: "optimization", title: "Optimization", icon: Zap },
-  { id: "operations", title: "Operations", icon: SlidersHorizontal },
-  { id: "activity", title: "Activity & audit", icon: Activity },
-  { id: "connections", title: "Connections", icon: Settings },
+  {
+    id: "overview",
+    title: "Overview",
+    icon: LayoutDashboard,
+    group: "Monitor",
+    scoped: true,
+    description:
+      "A live picture of capacity, workloads, and what needs attention.",
+  },
+  {
+    id: "host",
+    title: "Host & hardware",
+    icon: Server,
+    group: "Monitor",
+    description:
+      "CPU, memory, storage, network, GPU, services and processes on this node.",
+  },
+  {
+    id: "docker",
+    title: "Docker",
+    icon: Box,
+    group: "Monitor",
+    scoped: true,
+    description:
+      "Containers, images and build cache in this node's Docker engine.",
+  },
+  {
+    id: "gitlab",
+    title: "Runner stack",
+    icon: GitBranch,
+    group: "CI runner",
+    scoped: true,
+    description:
+      "Runner health, CI workers, toolchain images and cache volumes on this node.",
+  },
+  {
+    id: "projects",
+    title: "Projects & pipelines",
+    icon: ClipboardList,
+    group: "CI runner",
+    scoped: true,
+    description: "Repositories, pipelines and images observed on this runner.",
+  },
+  {
+    id: "survey",
+    title: "Survey & benchmarks",
+    icon: Timer,
+    group: "CI runner",
+    scoped: true,
+    description:
+      "Capture live checkpoints and compare them with recorded benchmark runs.",
+  },
+  {
+    id: "optimization",
+    title: "Optimization",
+    icon: Zap,
+    group: "CI runner",
+    description: "Measured opportunities and the next step for each resource.",
+  },
+  {
+    id: "operations",
+    title: "Operations",
+    icon: SlidersHorizontal,
+    group: "Manage",
+    description:
+      "Change runner capacity and manage local images. Every change is reviewed before it runs.",
+  },
+  {
+    id: "activity",
+    title: "Activity & audit",
+    icon: Activity,
+    group: "Manage",
+    description: "Active threshold alerts and the history of every action.",
+  },
+  {
+    id: "connections",
+    title: "Connections",
+    icon: Settings,
+    group: "Manage",
+    description:
+      "Know what is connected, how fresh it is, and what to configure.",
+  },
 ];
-const good = new Set([
-  "healthy",
-  "running",
-  "active",
-  "success",
-  "passed",
-  "accepted",
-]);
-const bad = new Set(["critical", "failed", "unavailable", "unhealthy"]);
-function Badge({ value }: { value: string }) {
-  return (
-    <span
-      className={`badge ${good.has(value) ? "good" : bad.has(value) ? "bad" : "muted"}`}
-    >
-      <i />
-      {value.replaceAll("_", " ")}
-    </span>
-  );
-}
+const groups = [...new Set(pages.map((p) => p.group))];
+
 function SourceNotice({ source, name }: { source?: Source; name: string }) {
   if (!source || (source.status === "healthy" && !source.stale)) return null;
   return (
-    <div className="notice">
+    <div className={`notice ${tone(source.stale ? "stale" : source.status)}`}>
       <TriangleAlert size={18} />
       <div>
         <strong>
@@ -128,16 +198,23 @@ function SourceNotice({ source, name }: { source?: Source; name: string }) {
     </div>
   );
 }
+/** Usage bars keep their series color until a threshold turns them amber or red. */
 function Meter({
   value,
   color = "blue",
+  warnAt = 75,
+  badAt = 90,
 }: {
   value?: number | null;
   color?: string;
+  warnAt?: number;
+  badAt?: number;
 }) {
+  const level =
+    value == null ? "" : value >= badAt ? "bad" : value >= warnAt ? "warn" : "";
   return (
     <div
-      className={`meter ${color}`}
+      className={`meter ${level || color}`}
       role="meter"
       aria-label="Usage"
       aria-valuemin={0}
@@ -182,10 +259,12 @@ function Chart({
   history,
   keys,
   percent = true,
+  count = false,
 }: {
   history: History[];
   keys: Array<[string, string, string]>;
   percent?: boolean;
+  count?: boolean;
 }) {
   if (history.length < 2)
     return (
@@ -205,7 +284,7 @@ function Chart({
           data={history}
           margin={{ top: 12, right: 8, left: 0, bottom: 0 }}
         >
-          <CartesianGrid stroke="#e7edf2" vertical={false} />
+          <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="ts"
             tickFormatter={(v) =>
@@ -214,7 +293,7 @@ function Chart({
                 minute: "2-digit",
               })
             }
-            tick={{ fill: "#65758a", fontSize: 11 }}
+            tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
             minTickGap={60}
             axisLine={false}
             tickLine={false}
@@ -222,18 +301,31 @@ function Chart({
           <YAxis
             width={48}
             domain={percent ? [0, 100] : [0, "auto"]}
-            tickFormatter={(v) => (percent ? `${v}%` : bytes(v))}
-            tick={{ fill: "#65758a", fontSize: 11 }}
+            allowDecimals={!count}
+            tickFormatter={(v) =>
+              percent ? `${v}%` : count ? String(v) : bytes(v)
+            }
+            tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip
             labelFormatter={(v) => new Date(Number(v) * 1000).toLocaleString()}
             formatter={(v: any, name: any) => [
-              percent ? pct(Number(v)) : `${bytes(Number(v))}/s`,
+              percent
+                ? pct(Number(v))
+                : count
+                  ? `${Number(v).toFixed(1)} jobs (bucket mean)`
+                  : `${bytes(Number(v))}/s`,
               name,
             ]}
-            contentStyle={{ border: "1px solid #dce5ee", borderRadius: 8 }}
+            contentStyle={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              color: "var(--text)",
+            }}
+            labelStyle={{ color: "var(--text-muted)" }}
           />
           {keys.map(([key, label, color]) =>
             percent ? (
@@ -244,8 +336,9 @@ function Chart({
                 name={label}
                 stroke={color}
                 fill={color}
-                fillOpacity={0.06}
+                fillOpacity={0.12}
                 strokeWidth={2}
+                dot={{ r: 2.5, strokeWidth: 1, fill: "var(--surface)" }}
                 isAnimationActive={false}
                 connectNulls={false}
               />
@@ -256,7 +349,7 @@ function Chart({
                 dataKey={key}
                 name={label}
                 stroke={color}
-                dot={false}
+                dot={{ r: 2.5, strokeWidth: 1, fill: "var(--surface)" }}
                 strokeWidth={2}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -282,6 +375,9 @@ function SignIn({ onSignIn }: { onSignIn: (token: string) => void }) {
   const [busy, setBusy] = useState(false);
   return (
     <main className="login">
+      <div className="login-theme">
+        <ThemeToggle />
+      </div>
       <div className="login-brand">
         <Gauge size={38} />
         <span>OpsDeck</span>
@@ -350,6 +446,7 @@ function App() {
   const [containerFilter, setContainerFilter] = useState("all");
   const [showVirtualNetwork, setShowVirtualNetwork] = useState(false);
   const [jobFilter, setJobFilter] = useState("all");
+  const [jobQuery, setJobQuery] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [confirmation, setConfirmation] = useState("");
   const [actionError, setActionError] = useState("");
@@ -482,12 +579,18 @@ function App() {
     );
   };
   const jobs: any[] = (gitlab?.jobs || []).filter(pipelineMatches);
+  const filteredJobs = jobs.filter(
+    (j) =>
+      `${j.name} ${j.project}`.toLowerCase().includes(jobQuery.toLowerCase()) &&
+      (jobFilter === "all" || j.status === jobFilter),
+  );
   const pipelines: any[] = (gitlab?.pipelines || []).filter(pipelineMatches);
   const alerts = snapshot?.alerts || [];
   const connected = Object.values(sources).filter(
     (s) => s.status === "healthy" && !s.stale,
   ).length;
-  const title = pages.find((p) => p.id === page)?.title || "Overview";
+  const current = pages.find((p) => p.id === page) || pages[0];
+  const title = current.title;
   const latest = sources.host?.updated_at;
   const ciKnown = sources.gitlab?.status === "healthy";
   const filteredContainers = containers
@@ -621,28 +724,37 @@ function App() {
         </a>
         <div className="workspace-label">Infrastructure workspace</div>
         <nav aria-label="Main navigation">
-          {pages.map((p) => (
-            <button
-              key={p.id}
-              aria-label={p.title}
-              aria-current={page === p.id ? "page" : undefined}
-              className={page === p.id ? "active" : ""}
-              onClick={() => {
-                setPage(p.id);
-                setQuery("");
-              }}
-            >
-              <p.icon size={18} />
-              {p.title}
-              {p.id === "activity" && alerts.length > 0 && (
-                <span className="nav-count">{alerts.length}</span>
-              )}
-            </button>
+          {groups.map((group) => (
+            <div className="nav-group" key={group}>
+              <span className="nav-group-label">{group}</span>
+              {pages
+                .filter((p) => p.group === group)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    aria-label={p.title}
+                    aria-current={page === p.id ? "page" : undefined}
+                    className={page === p.id ? "active" : ""}
+                    onClick={() => {
+                      setPage(p.id);
+                      setQuery("");
+                    }}
+                  >
+                    <p.icon size={18} />
+                    {p.title}
+                    {p.id === "activity" && alerts.length > 0 && (
+                      <span className="nav-count">{alerts.length}</span>
+                    )}
+                  </button>
+                ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
           <div className="host-chip">
-            <span className="status-dot" />
+            <span
+              className={`status-dot ${error ? "bad" : Object.values(sources).some((s) => s.stale || tone(s.status) === "bad") ? "warn" : "good"}`}
+            />
             <div>
               <strong>{host?.hostname || "Connecting to host"}</strong>
               <small>
@@ -661,9 +773,10 @@ function App() {
         <header className="topbar">
           <span>
             <Server size={15} />
-            Single-host workspace
+            {host?.hostname || "Single-host workspace"}
           </span>
           <div>
+            <ThemeToggle />
             <span className={`live ${error ? "offline" : ""}`}>
               <i />
               {error
@@ -692,15 +805,7 @@ function App() {
           <div className="page-heading">
             <div>
               <h1>{title}</h1>
-              <p>
-                {page === "overview"
-                  ? "A live picture of capacity, workloads, and what needs attention."
-                  : page === "optimization"
-                    ? "Measured opportunities and the next step for each resource."
-                    : page === "connections"
-                      ? "Know what is connected, how fresh it is, and what to configure."
-                      : "Inspect the details behind your infrastructure."}
-              </p>
+              <p>{current.description}</p>
             </div>
             <button
               className="secondary"
@@ -737,12 +842,21 @@ function App() {
               text="Collectors run independently. Your first host sample will appear shortly."
             />
           )}
-          <ScopeControls
-            scope={scope}
-            setScope={setScope}
-            view={workload.data}
-            error={workload.error}
-          />
+          {current.scoped && (
+            <ScopeControls
+              scope={scope}
+              setScope={setScope}
+              view={workload.data}
+              error={workload.error}
+            />
+          )}
+          {page === "projects" && (
+            <PipelineDiagnostics
+              pipelines={pipelines}
+              jobs={jobs}
+              fresh={ciKnown && !sources.gitlab?.stale}
+            />
+          )}
           {page === "projects" && (
             <WorkloadExplorer
               onScope={setScope}
@@ -769,9 +883,12 @@ function App() {
                 </div>
               )}
               <WorkloadSummary view={workload.data} />
+              {snapshot && (
+                <SupportOverview snapshot={snapshot} onNavigate={setPage} />
+              )}
               {stats}
               {sources.findings?.data && (
-                <div className="notice">
+                <div className="notice info">
                   <ClipboardList size={18} />
                   <div>
                     <strong>Your runner speedup report</strong>
@@ -809,24 +926,34 @@ function App() {
                   <Chart
                     history={history}
                     keys={[
-                      ["cpu", "CPU", "#3169c6"],
-                      ["memory", "Memory", "#8768b1"],
-                      ["gpu", "GPU 0", "#14857f"],
+                      ["cpu", "CPU", "var(--series-1)"],
+                      ["memory", "Memory", "var(--series-2)"],
+                      ["gpu", "GPU 0", "var(--series-3)"],
                     ]}
                   />
                 </Panel>
                 <Panel title="Needs attention" note={`${alerts.length} active`}>
                   <div className="attention">
                     {alerts.length ? (
-                      alerts.slice(0, 5).map((a) => (
-                        <div key={a.key}>
-                          <TriangleAlert size={18} />
-                          <strong>{a.title}</strong>
-                          <p>{a.detail}</p>
-                        </div>
-                      ))
+                      <PaginatedList
+                        items={alerts as any[]}
+                        label="Attention items"
+                        initialSize={5}
+                      >
+                        {(pageRows) => (
+                          <>
+                            {pageRows.map((a) => (
+                              <div key={a.key} className={tone(a.severity)}>
+                                <TriangleAlert size={18} />
+                                <strong>{a.title}</strong>
+                                <p>{a.detail}</p>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </PaginatedList>
                     ) : (
-                      <div>
+                      <div className="good">
                         <Check size={22} />
                         <strong>No threshold alerts in available data</strong>
                         <p>
@@ -846,55 +973,121 @@ function App() {
               </div>
               <div className="two-column">
                 <Panel title="Integration coverage">
-                  <div className="source-list">
-                    {Object.entries(sources).map(([key, value]) => (
-                      <button key={key} onClick={() => setPage("connections")}>
-                        <span>
-                          {
-                            (
+                  <PaginatedList
+                    items={Object.entries(sources) as any[]}
+                    label="Integration coverage"
+                    initialSize={10}
+                  >
+                    {(pageRows) => (
+                      <div className="source-list">
+                        {pageRows.map(([key, value]) => (
+                          <button
+                            key={key}
+                            onClick={() => setPage("connections")}
+                          >
+                            <span>
                               {
-                                host: "Host resources",
-                                docker: "Docker engine",
-                                gpu: "NVIDIA GPU",
-                                runner: "Runner metrics",
-                                gitlab: "GitLab projects",
-                                services: "System services",
-                                findings: "Survey archive",
-                              } as Record<string, string>
-                            )[key]
-                          }
-                        </span>
-                        <Badge value={value.stale ? "stale" : value.status} />
-                        <ChevronRight size={15} />
-                      </button>
-                    ))}
-                  </div>
+                                (
+                                  {
+                                    host: "Host resources",
+                                    docker: "Docker engine",
+                                    gpu: "NVIDIA GPU",
+                                    runner: "Runner metrics",
+                                    gitlab: "GitLab projects",
+                                    services: "System services",
+                                    findings: "Survey archive",
+                                  } as Record<string, string>
+                                )[key]
+                              }
+                            </span>
+                            <Badge
+                              value={value.stale ? "stale" : value.status}
+                            />
+                            <ChevronRight size={15} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </PaginatedList>
                 </Panel>
                 <Panel title="Storage headroom">
                   {host?.volumes?.length ? (
-                    host.volumes.slice(0, 4).map((v: any) => (
-                      <div className="volume" key={v.mount}>
-                        <div>
-                          <strong>{v.mount}</strong>
-                          <span>
-                            {bytes(v.free)} free of {bytes(v.total)}
-                          </span>
-                        </div>
-                        <Meter
-                          value={v.percent}
-                          color={v.percent > 85 ? "red" : "blue"}
-                        />
-                        <small>
-                          {v.device} · {v.fstype} · {pct(v.percent)} used
-                        </small>
-                      </div>
-                    ))
+                    <PaginatedList
+                      items={host.volumes as any[]}
+                      label="Storage headroom"
+                      initialSize={5}
+                    >
+                      {(pageRows) => (
+                        <>
+                          {pageRows.map((v: any) => (
+                            <div className="volume" key={v.mount}>
+                              <div>
+                                <strong>{v.mount}</strong>
+                                <span>
+                                  {bytes(v.free)} free of {bytes(v.total)}
+                                </span>
+                              </div>
+                              <Meter value={v.percent} warnAt={85} badAt={95} />
+                              <small>
+                                {v.device} · {v.fstype} · {pct(v.percent)} used
+                              </small>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </PaginatedList>
                   ) : (
                     <Empty
                       title="No filesystem data yet"
                       text="Check the host collector connection."
                     />
                   )}
+                </Panel>
+              </div>
+              {snapshot && (
+                <ResourceDiagnostics history={history} snapshot={snapshot} />
+              )}
+              <div className="two-column">
+                <Panel
+                  title="Network throughput"
+                  note="Whole node · bytes per second"
+                >
+                  <Chart
+                    history={history}
+                    percent={false}
+                    keys={[
+                      ["rx", "Received", "var(--series-1)"],
+                      ["tx", "Sent", "var(--series-3)"],
+                    ]}
+                  />
+                  <p className="panel-description">
+                    Physical and non-excluded interface totals. Docker bridges,
+                    veth, br- and Tailscale interfaces are excluded by the
+                    collector to reduce double counting.
+                  </p>
+                </Panel>
+                <Panel
+                  title="CI queue over time"
+                  note="Whole node · sampled pending jobs"
+                >
+                  {history.filter((sample) => sample.queued != null).length >=
+                  2 ? (
+                    <Chart
+                      history={history}
+                      percent={false}
+                      count
+                      keys={[["queued", "Pending jobs", "var(--series-4)"]]}
+                    />
+                  ) : (
+                    <Empty
+                      title="Queue history is unavailable"
+                      text="Connect GitLab and retain two samples to see pending job counts. Missing samples are not counted as zero."
+                    />
+                  )}
+                  <p className="panel-description">
+                    Counts cover configured projects sampled by GitLab. Hardware
+                    and queue history are not filtered by repository scope.
+                  </p>
                 </Panel>
               </div>
             </>
@@ -916,6 +1109,9 @@ function App() {
                 </div>
               )}
               {stats}
+              {snapshot && (
+                <ResourceDiagnostics history={history} snapshot={snapshot} />
+              )}
               <div className="two-column">
                 <Panel title="Host facts">
                   <dl className="facts">
@@ -981,111 +1177,141 @@ function App() {
                           )[key]
                         }
                       </span>
-                      <Meter value={host?.pressure?.[key]?.some?.avg60} />
+                      <Meter
+                        value={host?.pressure?.[key]?.some?.avg60}
+                        warnAt={10}
+                        badAt={25}
+                      />
                       <strong>{pct(host?.pressure?.[key]?.some?.avg60)}</strong>
                     </div>
                   ))}
                 </Panel>
               </div>
               <Panel title="Filesystem capacity">
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Mount</th>
-                        <th>Device</th>
-                        <th>Capacity</th>
-                        <th>Available</th>
-                        <th>Usage</th>
-                        <th>Inodes used</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {host?.volumes?.map((v: any) => (
-                        <tr key={v.mount}>
-                          <td>
-                            <strong>{v.mount}</strong>
-                            <small>{v.fstype}</small>
-                          </td>
-                          <td>{v.device}</td>
-                          <td>{bytes(v.total)}</td>
-                          <td>{bytes(v.free)}</td>
-                          <td>
-                            <Meter value={v.percent} />
-                            {pct(v.percent)}
-                          </td>
-                          <td>{pct(v.inode_percent)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <PaginatedList
+                  items={host?.volumes || ([] as any[])}
+                  label="Filesystems"
+                >
+                  {(pageRows) => (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Mount</th>
+                            <th>Device</th>
+                            <th>Capacity</th>
+                            <th>Available</th>
+                            <th>Usage</th>
+                            <th>Inodes used</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pageRows.map((v: any) => (
+                            <tr key={v.mount}>
+                              <td>
+                                <strong>{v.mount}</strong>
+                                <small>{v.fstype}</small>
+                              </td>
+                              <td>{v.device}</td>
+                              <td>{bytes(v.total)}</td>
+                              <td>{bytes(v.free)}</td>
+                              <td>
+                                <Meter
+                                  value={v.percent}
+                                  warnAt={85}
+                                  badAt={95}
+                                />
+                                {pct(v.percent)}
+                              </td>
+                              <td>{pct(v.inode_percent)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </PaginatedList>
               </Panel>
               <Panel title="Device inventory">
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Device</th>
-                        <th>Capacity</th>
-                        <th>Media</th>
-                        <th>Filesystem / partitions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {host?.inventory?.map((d: any) => (
-                        <tr key={d.name}>
-                          <td>{d.name}</td>
-                          <td>{bytes(d.size)}</td>
-                          <td>{d.rota ? "HDD" : "Solid state"}</td>
-                          <td>
-                            {d.fstype ||
-                              (d.children?.length
-                                ? `${d.children.length} partition(s)`
-                                : "No filesystem reported")}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <PaginatedList
+                  items={host?.inventory || ([] as any[])}
+                  label="Devices"
+                >
+                  {(pageRows) => (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Device</th>
+                            <th>Capacity</th>
+                            <th>Media</th>
+                            <th>Filesystem / partitions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pageRows.map((d: any) => (
+                            <tr key={d.name}>
+                              <td>{d.name}</td>
+                              <td>{bytes(d.size)}</td>
+                              <td>{d.rota ? "HDD" : "Solid state"}</td>
+                              <td>
+                                {d.fstype ||
+                                  (d.children?.length
+                                    ? `${d.children.length} partition(s)`
+                                    : "No filesystem reported")}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </PaginatedList>
                 <p className="panel-description">
                   Device ownership and contents must be checked separately
                   before repurposing a drive.
                 </p>
               </Panel>
               <Panel title="Physical disks & I/O">
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Device</th>
-                        <th>Read / write</th>
-                        <th>Operations/s</th>
-                        <th>Average latency</th>
-                        <th>Busy</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {host?.disks?.map((d: any) => (
-                        <tr key={d.name}>
-                          <td>{d.name}</td>
-                          <td>
-                            {bytes(d.read_bytes_s)}/s / {bytes(d.write_bytes_s)}
-                            /s
-                          </td>
-                          <td>{d.iops?.toFixed(1) ?? "—"}</td>
-                          <td>
-                            {d.await_ms == null
-                              ? "—"
-                              : `${d.await_ms.toFixed(1)} ms`}
-                          </td>
-                          <td>{pct(d.busy_percent)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <PaginatedList
+                  items={host?.disks || ([] as any[])}
+                  label="Physical disks"
+                >
+                  {(pageRows) => (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Device</th>
+                            <th>Read / write</th>
+                            <th>Operations/s</th>
+                            <th>Average latency</th>
+                            <th>Busy</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pageRows.map((d: any) => (
+                            <tr key={d.name}>
+                              <td>{d.name}</td>
+                              <td>
+                                {bytes(d.read_bytes_s)}/s /{" "}
+                                {bytes(d.write_bytes_s)}
+                                /s
+                              </td>
+                              <td>{d.iops?.toFixed(1) ?? "—"}</td>
+                              <td>
+                                {d.await_ms == null
+                                  ? "—"
+                                  : `${d.await_ms.toFixed(1)} ms`}
+                              </td>
+                              <td>{pct(d.busy_percent)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </PaginatedList>
                 <p className="panel-description">
                   Rates need two samples. Device busy time alone does not
                   measure NVMe saturation.
@@ -1105,68 +1331,100 @@ function App() {
                     </button>
                   }
                 >
-                  {host?.network
-                    ?.filter(
-                      (n: any) =>
-                        showVirtualNetwork ||
-                        !/^(docker|veth|br-)/.test(n.name),
-                    )
-                    .map((n: any) => (
-                      <div className="network-row" key={n.name}>
-                        <Network size={17} />
-                        <div>
-                          <strong>{n.name}</strong>
-                          <small>
-                            {n.up ? "Up" : "Down"} ·{" "}
-                            {n.speed_mbps > 0
-                              ? `${n.speed_mbps} Mbps`
-                              : "Link speed unavailable"}{" "}
-                            · {n.errors} errors / {n.drops} drops
-                          </small>
-                        </div>
-                        <span>
-                          <ArrowDown size={13} />
-                          {bytes(n.rx_bytes_s)}/s
-                          <br />
-                          <ArrowUp size={13} />
-                          {bytes(n.tx_bytes_s)}/s
-                        </span>
-                      </div>
-                    ))}
+                  {
+                    <PaginatedList
+                      items={
+                        host?.network?.filter(
+                          (n: any) =>
+                            showVirtualNetwork ||
+                            !/^(docker|veth|br-)/.test(n.name),
+                        ) || ([] as any[])
+                      }
+                      label="Network interfaces"
+                      initialSize={10}
+                      resetKey={showVirtualNetwork ? "all" : "physical"}
+                    >
+                      {(pageRows) => (
+                        <>
+                          {pageRows.map((n: any) => (
+                            <div className="network-row" key={n.name}>
+                              <Network size={17} />
+                              <div>
+                                <strong>{n.name}</strong>
+                                <small>
+                                  {n.up ? "Up" : "Down"} ·{" "}
+                                  {n.speed_mbps > 0
+                                    ? `${n.speed_mbps} Mbps`
+                                    : "Link speed unavailable"}{" "}
+                                  · {n.errors} errors / {n.drops} drops
+                                </small>
+                              </div>
+                              <span>
+                                <ArrowDown size={13} />
+                                {bytes(n.rx_bytes_s)}/s
+                                <br />
+                                <ArrowUp size={13} />
+                                {bytes(n.tx_bytes_s)}/s
+                              </span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </PaginatedList>
+                  }
                 </Panel>
                 <Panel title="GPU & temperatures">
                   <SourceNotice source={sources.gpu} name="GPU" />
-                  {sources.gpu?.data?.map((g: any) => (
-                    <div className="gpu" key={g.index}>
-                      <h3>{g.name}</h3>
-                      <dl className="facts">
-                        <dt>GPU utilization</dt>
-                        <dd>{pct(g.utilization)}</dd>
-                        <dt>VRAM</dt>
-                        <dd>
-                          {g.memory_used_mib} / {g.memory_total_mib} MiB
-                        </dd>
-                        <dt>Temperature</dt>
-                        <dd>{g.temperature ?? "—"} °C</dd>
-                        <dt>Power draw / limit</dt>
-                        <dd>
-                          {g.power_w ?? "—"} / {g.power_limit_w ?? "—"} W
-                        </dd>
-                        <dt>Driver</dt>
-                        <dd>{g.driver}</dd>
-                      </dl>
-                    </div>
-                  ))}
-                  <div className="temperature-list">
-                    {host?.temperatures
-                      ?.slice(0, 8)
-                      .map((t: any, i: number) => (
-                        <span key={i}>
-                          <Thermometer size={13} />
-                          {t.label || t.sensor}: {t.current} °C
-                        </span>
-                      ))}
-                  </div>
+                  {
+                    <PaginatedList
+                      items={sources.gpu?.data || ([] as any[])}
+                      label="GPU devices"
+                      initialSize={10}
+                    >
+                      {(pageRows) => (
+                        <>
+                          {pageRows.map((g: any) => (
+                            <div className="gpu" key={g.index}>
+                              <h3>{g.name}</h3>
+                              <dl className="facts">
+                                <dt>GPU utilization</dt>
+                                <dd>{pct(g.utilization)}</dd>
+                                <dt>VRAM</dt>
+                                <dd>
+                                  {g.memory_used_mib} / {g.memory_total_mib} MiB
+                                </dd>
+                                <dt>Temperature</dt>
+                                <dd>{g.temperature ?? "—"} °C</dd>
+                                <dt>Power draw / limit</dt>
+                                <dd>
+                                  {g.power_w ?? "—"} / {g.power_limit_w ?? "—"}{" "}
+                                  W
+                                </dd>
+                                <dt>Driver</dt>
+                                <dd>{g.driver}</dd>
+                              </dl>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </PaginatedList>
+                  }
+                  <PaginatedList
+                    items={host?.temperatures || ([] as any[])}
+                    label="Temperature sensors"
+                    initialSize={10}
+                  >
+                    {(pageRows) => (
+                      <div className="temperature-list">
+                        {pageRows.map((t: any, i: number) => (
+                          <span key={i}>
+                            <Thermometer size={13} />
+                            {t.label || t.sensor}: {t.current} °C
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </PaginatedList>
                 </Panel>
               </div>
             </>
@@ -1175,60 +1433,74 @@ function App() {
             <>
               <Panel title="System services">
                 <SourceNotice source={sources.services} name="Services" />
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Service</th>
-                        <th>State</th>
-                        <th>Detail</th>
-                        <th>Memory</th>
-                        <th>Exit code</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sources.services?.data?.map((s: any) => (
-                        <tr key={s.name}>
-                          <td>{s.name}</td>
-                          <td>
-                            <Badge value={s.state} />
-                          </td>
-                          <td>
-                            {s.load === "not-found"
-                              ? "Not installed"
-                              : s.substate}
-                          </td>
-                          <td>{bytes(s.memory_bytes)}</td>
-                          <td>{s.exit_code ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <PaginatedList
+                  items={sources.services?.data || ([] as any[])}
+                  label="System services"
+                >
+                  {(pageRows) => (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Service</th>
+                            <th>State</th>
+                            <th>Detail</th>
+                            <th>Memory</th>
+                            <th>Exit code</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pageRows.map((s: any) => (
+                            <tr key={s.name}>
+                              <td>{s.name}</td>
+                              <td>
+                                <Badge value={s.state} />
+                              </td>
+                              <td>
+                                {s.load === "not-found"
+                                  ? "Not installed"
+                                  : s.substate}
+                              </td>
+                              <td>{bytes(s.memory_bytes)}</td>
+                              <td>{s.exit_code ?? "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </PaginatedList>
               </Panel>
               <Panel title="Processes with the largest memory footprint">
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Process</th>
-                        <th>PID</th>
-                        <th>Resident memory</th>
-                        <th>CPU</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {host?.top_processes?.map((p: any) => (
-                        <tr key={p.pid}>
-                          <td>{p.name}</td>
-                          <td>{p.pid}</td>
-                          <td>{bytes(p.memory_bytes)}</td>
-                          <td>{pct(p.cpu_percent)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <PaginatedList
+                  items={host?.top_processes || ([] as any[])}
+                  label="Processes"
+                >
+                  {(pageRows) => (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Process</th>
+                            <th>PID</th>
+                            <th>Resident memory</th>
+                            <th>CPU</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pageRows.map((p: any) => (
+                            <tr key={p.pid}>
+                              <td>{p.name}</td>
+                              <td>{p.pid}</td>
+                              <td>{bytes(p.memory_bytes)}</td>
+                              <td>{pct(p.cpu_percent)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </PaginatedList>
                 <p className="panel-description">
                   Top 15 by resident memory. Process CPU needs two samples.
                   Arguments and environment variables are not collected.
@@ -1457,7 +1729,7 @@ function App() {
           {page === "operations" && (
             <OperatorConsole
               token={token}
-              images={docker?.images || []}
+              images={allDocker?.images || []}
               onChanged={() => setRefresh((value) => value + 1)}
             />
           )}
@@ -1469,7 +1741,8 @@ function App() {
                 view={workload.data}
                 onChanged={() => setRefresh((value) => value + 1)}
               />
-              <div className="notice">
+              <div className="notice info">
+                <ClipboardList size={18} />
                 <div>
                   <strong>
                     Imported benchmark evidence
@@ -1500,6 +1773,11 @@ function App() {
           )}
           {page === "gitlab" && (
             <>
+              <PipelineDiagnostics
+                pipelines={pipelines}
+                jobs={jobs}
+                fresh={ciKnown && !sources.gitlab?.stale}
+              />
               <SourceNotice source={sources.docker} name="Docker" />
               <RunnerTelemetry
                 source={sources.runner}
@@ -1513,6 +1791,7 @@ function App() {
                 }
               />
               <RunnerInventory
+                key={JSON.stringify(scope)}
                 docker={docker}
                 archive={archiveMatches ? sources.findings?.data : undefined}
                 host={host}
@@ -1564,48 +1843,56 @@ function App() {
                   note="GitLab is read-only"
                 >
                   {pipelines.length ? (
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Pipeline / project</th>
-                            <th>Branch</th>
-                            <th>Status</th>
-                            <th>Duration</th>
-                            <th>Queue duration</th>
-                            <th>Created</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pipelines.map((p) => (
-                            <tr key={`${p.project}-${p.id}`}>
-                              <td>
-                                <a
-                                  href={safeUrl(p.url)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  #{p.id}
-                                  <ExternalLink size={12} />
-                                </a>
-                                <small>{p.project}</small>
-                              </td>
-                              <td>{p.ref}</td>
-                              <td>
-                                <Badge value={p.status} />
-                              </td>
-                              <td>{duration(p.duration)}</td>
-                              <td>{duration(p.queued_duration)}</td>
-                              <td>
-                                {p.created_at
-                                  ? new Date(p.created_at).toLocaleString()
-                                  : "—"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <PaginatedList
+                      items={pipelines || ([] as any[])}
+                      label="GitLab pipelines"
+                      resetKey={JSON.stringify(scope)}
+                    >
+                      {(pageRows) => (
+                        <div className="table-wrap">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Pipeline / project</th>
+                                <th>Branch</th>
+                                <th>Status</th>
+                                <th>Duration</th>
+                                <th>Queue duration</th>
+                                <th>Created</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pageRows.map((p) => (
+                                <tr key={`${p.project}-${p.id}`}>
+                                  <td>
+                                    <a
+                                      href={safeUrl(p.url)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      #{p.id}
+                                      <ExternalLink size={12} />
+                                    </a>
+                                    <small>{p.project}</small>
+                                  </td>
+                                  <td>{p.ref}</td>
+                                  <td>
+                                    <Badge value={p.status} />
+                                  </td>
+                                  <td>{duration(p.duration)}</td>
+                                  <td>{duration(p.queued_duration)}</td>
+                                  <td>
+                                    {p.created_at
+                                      ? new Date(p.created_at).toLocaleString()
+                                      : "—"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </PaginatedList>
                   ) : (
                     <Empty
                       title="Connect your projects"
@@ -1620,10 +1907,9 @@ function App() {
                       <input
                         aria-label="Search jobs"
                         placeholder="Search jobs or projects"
-                        value={query}
+                        value={jobQuery}
                         onChange={(e) => {
-                          setQuery(e.target.value);
-                          setContainerPage(1);
+                          setJobQuery(e.target.value);
                         }}
                       />
                     </label>
@@ -1640,52 +1926,52 @@ function App() {
                     </select>
                   </div>
                   {jobs.length ? (
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Job</th>
-                            <th>Pipeline</th>
-                            <th>Status</th>
-                            <th>Execution</th>
-                            <th>Queue</th>
-                            <th>Runner</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {jobs
-                            .filter(
-                              (j) =>
-                                `${j.name} ${j.project}`
-                                  .toLowerCase()
-                                  .includes(query.toLowerCase()) &&
-                                (jobFilter === "all" || j.status === jobFilter),
-                            )
-                            .map((j) => (
-                              <tr key={`${j.project}-${j.id}`}>
-                                <td>
-                                  <a
-                                    href={safeUrl(j.url)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {j.name}
-                                    <ExternalLink size={12} />
-                                  </a>
-                                  <small>{j.project}</small>
-                                </td>
-                                <td>#{j.pipeline}</td>
-                                <td>
-                                  <Badge value={j.status} />
-                                </td>
-                                <td>{duration(j.duration)}</td>
-                                <td>{duration(j.queued_duration)}</td>
-                                <td>{j.runner || "Unassigned"}</td>
+                    <PaginatedList
+                      items={filteredJobs as any[]}
+                      label="GitLab jobs"
+                      resetKey={`${JSON.stringify(scope)}:${jobQuery}:${jobFilter}`}
+                    >
+                      {(pageRows) => (
+                        <div className="table-wrap">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Job</th>
+                                <th>Pipeline</th>
+                                <th>Status</th>
+                                <th>Execution</th>
+                                <th>Queue</th>
+                                <th>Runner</th>
                               </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
+                            </thead>
+                            <tbody>
+                              {pageRows.map((j) => (
+                                <tr key={`${j.project}-${j.id}`}>
+                                  <td>
+                                    <a
+                                      href={safeUrl(j.url)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      {j.name}
+                                      <ExternalLink size={12} />
+                                    </a>
+                                    <small>{j.project}</small>
+                                  </td>
+                                  <td>#{j.pipeline}</td>
+                                  <td>
+                                    <Badge value={j.status} />
+                                  </td>
+                                  <td>{duration(j.duration)}</td>
+                                  <td>{duration(j.queued_duration)}</td>
+                                  <td>{j.runner || "Unassigned"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </PaginatedList>
                   ) : (
                     <Empty
                       title="No jobs collected"
@@ -1714,22 +2000,30 @@ function App() {
                   </p>
                 </div>
               </div>
-              <div className="recommendations">
-                {snapshot?.recommendations.map((r) => (
-                  <article className="recommendation" key={r.key}>
-                    <div>
-                      <span className="category">{r.category}</span>
-                      <Badge value={r.status} />
-                    </div>
-                    <h2>{r.title}</h2>
-                    <p>{r.evidence}</p>
-                    <div className="next-step">
-                      <strong>Next step</strong>
-                      <p>{r.next}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <PaginatedList
+                items={snapshot?.recommendations || ([] as any[])}
+                label="Recommendations"
+                initialSize={10}
+              >
+                {(pageRows) => (
+                  <div className="recommendations">
+                    {pageRows.map((r) => (
+                      <article className="recommendation" key={r.key}>
+                        <div>
+                          <span className="category">{r.category}</span>
+                          <Badge value={r.status} />
+                        </div>
+                        <h2>{r.title}</h2>
+                        <p>{r.evidence}</p>
+                        <div className="next-step">
+                          <strong>Next step</strong>
+                          <p>{r.next}</p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </PaginatedList>
               <Panel title="Measure before raising concurrency">
                 <div className="benchmark">
                   <div>
@@ -1763,18 +2057,26 @@ function App() {
             <>
               <Panel title="Active conditions" note={`${alerts.length} active`}>
                 {alerts.length ? (
-                  <div className="event-list">
-                    {alerts.map((a) => (
-                      <div key={a.key}>
-                        <TriangleAlert size={18} />
-                        <div>
-                          <strong>{a.title}</strong>
-                          <p>{a.detail}</p>
-                        </div>
-                        <Badge value={a.severity} />
+                  <PaginatedList
+                    items={alerts as any[]}
+                    label="Active conditions"
+                    initialSize={10}
+                  >
+                    {(pageRows) => (
+                      <div className="event-list">
+                        {pageRows.map((a) => (
+                          <div key={a.key} className={tone(a.severity)}>
+                            <TriangleAlert size={18} />
+                            <div>
+                              <strong>{a.title}</strong>
+                              <p>{a.detail}</p>
+                            </div>
+                            <Badge value={a.severity} />
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </PaginatedList>
                 ) : (
                   <Empty
                     title="No active threshold alerts"
@@ -1796,43 +2098,53 @@ function App() {
                 token={token}
                 onChanged={() => setRefresh((value) => value + 1)}
               />
-              <div className="connection-grid">
-                {Object.entries(sources).map(([key, s]) => (
-                  <Panel
-                    key={key}
-                    title={
-                      key === "gpu"
-                        ? "NVIDIA GPU"
-                        : key === "gitlab"
-                          ? "GitLab projects"
-                          : key === "runner"
-                            ? "Runner metrics"
-                            : key === "docker"
-                              ? "Docker engine"
-                              : key === "findings"
-                                ? "Survey archive"
-                                : key === "services"
-                                  ? "System services"
-                                  : "Host resources"
-                    }
-                    note={<Badge value={s.stale ? "stale" : s.status} />}
-                  >
-                    <p className="panel-description">
-                      {s.message || "Collector connected and reporting."}
-                    </p>
-                    <dl className="facts">
-                      <dt>Last collector attempt</dt>
-                      <dd>
-                        {s.updated_at
-                          ? new Date(s.updated_at * 1000).toLocaleTimeString()
-                          : "Waiting"}
-                      </dd>
-                      <dt>Sample age</dt>
-                      <dd>{duration(s.age_seconds)}</dd>
-                    </dl>
-                  </Panel>
-                ))}
-              </div>
+              <PaginatedList
+                items={Object.entries(sources) as any[]}
+                label="Connections"
+                initialSize={10}
+              >
+                {(pageRows) => (
+                  <div className="connection-grid">
+                    {pageRows.map(([key, s]) => (
+                      <Panel
+                        key={key}
+                        title={
+                          key === "gpu"
+                            ? "NVIDIA GPU"
+                            : key === "gitlab"
+                              ? "GitLab projects"
+                              : key === "runner"
+                                ? "Runner metrics"
+                                : key === "docker"
+                                  ? "Docker engine"
+                                  : key === "findings"
+                                    ? "Survey archive"
+                                    : key === "services"
+                                      ? "System services"
+                                      : "Host resources"
+                        }
+                        note={<Badge value={s.stale ? "stale" : s.status} />}
+                      >
+                        <p className="panel-description">
+                          {s.message || "Collector connected and reporting."}
+                        </p>
+                        <dl className="facts">
+                          <dt>Last collector attempt</dt>
+                          <dd>
+                            {s.updated_at
+                              ? new Date(
+                                  s.updated_at * 1000,
+                                ).toLocaleTimeString()
+                              : "Waiting"}
+                          </dd>
+                          <dt>Sample age</dt>
+                          <dd>{duration(s.age_seconds)}</dd>
+                        </dl>
+                      </Panel>
+                    ))}
+                  </div>
+                )}
+              </PaginatedList>
               <Panel title="Server configuration guide">
                 <div className="setup-guide">
                   <article>

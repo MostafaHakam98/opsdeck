@@ -1,4 +1,6 @@
+import { PaginatedList } from "../../components/PaginatedList";
 import { type Source } from "../../lib/api";
+import { tone } from "../../components/Status";
 
 export function RunnerTelemetry({
   source,
@@ -19,7 +21,9 @@ export function RunnerTelemetry({
       <div className="speedup-cards">
         <div>
           <span>Runner service</span>
-          <strong>{service?.state || "Unknown"}</strong>
+          <strong className={`tone-${tone(service?.state)}`}>
+            {service?.state || "Unknown"}
+          </strong>
           <small>
             {service
               ? `${service.name} · ${service.substate}`
@@ -28,7 +32,9 @@ export function RunnerTelemetry({
         </div>
         <div>
           <span>Metrics endpoint</span>
-          <strong>
+          <strong
+            className={`tone-${tone(healthy ? "healthy" : source?.stale ? "stale" : "unavailable")}`}
+          >
             {healthy ? "Available" : source?.stale ? "Stale" : "Unavailable"}
           </strong>
           <small>Separate from service health and Docker activity</small>
@@ -44,7 +50,7 @@ export function RunnerTelemetry({
         </div>
       </div>
       {!healthy && (
-        <div className="notice">
+        <div className="notice warn">
           <div>
             <strong>Enable the runner’s local metrics exporter</strong>
             <p>{source?.message || "Waiting for runner metrics."}</p>
@@ -70,32 +76,39 @@ export function RunnerTelemetry({
             . Global job limit at export: {facts.concurrent ?? "unknown"}.
             Refresh the export after configuration changes.
           </p>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Registration</th>
-                  <th>Executor</th>
-                  <th>Job limit</th>
-                  <th>Request concurrency</th>
-                  <th>CPU quota</th>
-                  <th>Memory ceiling</th>
-                </tr>
-              </thead>
-              <tbody>
-                {facts.runners.map((row: any) => (
-                  <tr key={row.name}>
-                    <td>{row.name}</td>
-                    <td>{row.executor}</td>
-                    <td>{row.limit === 0 ? "Global limit" : row.limit}</td>
-                    <td>{row.request_concurrency}</td>
-                    <td>{row.cpus ?? "Not set"}</td>
-                    <td>{row.memory ?? "Not set"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaginatedList
+            items={facts.runners as any[]}
+            label="Runner registrations"
+          >
+            {(pageRows) => (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Registration</th>
+                      <th>Executor</th>
+                      <th>Job limit</th>
+                      <th>Request concurrency</th>
+                      <th>CPU quota</th>
+                      <th>Memory ceiling</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((row: any) => (
+                      <tr key={row.name}>
+                        <td>{row.name}</td>
+                        <td>{row.executor}</td>
+                        <td>{row.limit === 0 ? "Global limit" : row.limit}</td>
+                        <td>{row.request_concurrency}</td>
+                        <td>{row.cpus ?? "Not set"}</td>
+                        <td>{row.memory ?? "Not set"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedList>
         </>
       ) : (
         <p className="panel-description">
@@ -106,24 +119,31 @@ export function RunnerTelemetry({
       {healthy && Object.keys(metrics).length > 0 && (
         <details className="panel-description">
           <summary>Collected runner metrics</summary>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Metric</th>
-                  <th>Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(metrics).map(([name, value]) => (
-                  <tr key={name}>
-                    <td>{name}</td>
-                    <td>{String(value)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaginatedList
+            items={Object.entries(metrics) as any[]}
+            label="Runner metrics"
+          >
+            {(pageRows) => (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map(([name, value]) => (
+                      <tr key={name}>
+                        <td>{name}</td>
+                        <td>{String(value)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedList>
           <p>
             Values are summed by metric name across labels. Histogram bucket
             totals are not job-duration percentiles or queue-time estimates.

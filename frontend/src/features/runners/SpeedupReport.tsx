@@ -1,3 +1,4 @@
+import { PaginatedList } from "../../components/PaginatedList";
 import { useState } from "react";
 import { Download } from "lucide-react";
 import { download, duration } from "../../lib/api";
@@ -8,6 +9,7 @@ import {
   timingRows,
   type Benchmark,
 } from "./benchmarks";
+import { tone } from "../../components/Status";
 
 export function SpeedupReport({ archive }: { archive: any }) {
   const measured: Benchmark[] = archive.benchmarks.filter(
@@ -84,7 +86,15 @@ export function SpeedupReport({ archive }: { archive: any }) {
       <div className="speedup-cards">
         <div>
           <span>Execution speedup</span>
-          <strong>
+          <strong
+            className={
+              execution?.factor == null
+                ? ""
+                : execution.factor >= 1
+                  ? "tone-good"
+                  : "tone-bad"
+            }
+          >
             {execution?.factor == null
               ? "—"
               : `${execution.factor.toFixed(2)}×`}
@@ -96,7 +106,15 @@ export function SpeedupReport({ archive }: { archive: any }) {
         </div>
         <div>
           <span>Runner work reduction</span>
-          <strong>
+          <strong
+            className={
+              work?.reductionPercent == null
+                ? ""
+                : work.reductionPercent >= 0
+                  ? "tone-good"
+                  : "tone-bad"
+            }
+          >
             {work?.reductionPercent == null
               ? "—"
               : `${work.reductionPercent.toFixed(1)}%`}
@@ -108,7 +126,9 @@ export function SpeedupReport({ archive }: { archive: any }) {
         </div>
         <div>
           <span>Jobs slower in this comparison</span>
-          <strong>{regressions.length}</strong>
+          <strong className={regressions.length ? "tone-warn" : "tone-good"}>
+            {regressions.length}
+          </strong>
           <p>
             {regressions.length
               ? regressions.map((job: any) => job.name).join(", ")
@@ -118,7 +138,13 @@ export function SpeedupReport({ archive }: { archive: any }) {
         </div>
         <div>
           <span>Optimizations verified on this host</span>
-          <strong>
+          <strong
+            className={
+              verified === archive.optimizations.length
+                ? "tone-good"
+                : "tone-warn"
+            }
+          >
             {verified}/{archive.optimizations.length}
           </strong>
           <p>Current independent checks</p>
@@ -161,52 +187,72 @@ export function SpeedupReport({ archive }: { archive: any }) {
         establish throughput or identify which individual optimization caused
         the improvement.
       </p>
-      {regressions.map((job: any) => (
-        <p className="panel-description regression" key={job.name}>
-          <strong>{job.name}:</strong>{" "}
-          {changeLabel(compareTiming(job.seconds[from], job.seconds[to]))}.{" "}
-          {job.note || "No cause recorded."}
-        </p>
-      ))}
+      {regressions.length > 0 && (
+        <PaginatedList
+          items={regressions as any[]}
+          label="Job regressions"
+          initialSize={10}
+          resetKey={`${before.pipeline_id}:${after.pipeline_id}`}
+        >
+          {(pageRows) => (
+            <>
+              {pageRows.map((job: any) => (
+                <p className="panel-description regression" key={job.name}>
+                  <strong>{job.name}:</strong>{" "}
+                  {changeLabel(
+                    compareTiming(job.seconds[from], job.seconds[to]),
+                  )}
+                  . {job.note || "No cause recorded."}
+                </p>
+              ))}
+            </>
+          )}
+        </PaginatedList>
+      )}
       {archive.measurements?.length > 0 && (
         <>
           <div className="panel-heading">
             <h3>Other survey measurements and projections</h3>
           </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Finding</th>
-                  <th>Before</th>
-                  <th>After / target</th>
-                  <th>Evidence type</th>
-                </tr>
-              </thead>
-              <tbody>
-                {archive.measurements.map((item: any) => (
-                  <tr key={item.title}>
-                    <td>
-                      <strong>{item.title}</strong>
-                      <small>{item.evidence}</small>
-                    </td>
-                    <td>{item.before || "Not recorded"}</td>
-                    <td>
-                      {item.after}
-                      <small>{item.note}</small>
-                    </td>
-                    <td>
-                      <span
-                        className={`badge ${item.kind === "measured" ? "good" : "muted"}`}
-                      >
-                        {item.kind}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaginatedList
+            items={archive.measurements as any[]}
+            label="Survey measurements"
+          >
+            {(pageRows) => (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Finding</th>
+                      <th>Before</th>
+                      <th>After / target</th>
+                      <th>Evidence type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((item: any) => (
+                      <tr key={item.title}>
+                        <td>
+                          <strong>{item.title}</strong>
+                          <small>{item.evidence}</small>
+                        </td>
+                        <td>{item.before || "Not recorded"}</td>
+                        <td>
+                          {item.after}
+                          <small>{item.note}</small>
+                        </td>
+                        <td>
+                          <span className={`badge ${tone(item.kind)}`}>
+                            {item.kind}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedList>
         </>
       )}
     </section>

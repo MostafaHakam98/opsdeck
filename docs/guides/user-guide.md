@@ -8,15 +8,33 @@ The dashboard refreshes every 10 seconds. Individual collectors have their own s
 
 A dash is an unavailable measurement, not zero. Check integration coverage before interpreting a quiet dashboard.
 
+## Theme and status colors
+
+Use the switch in the top bar to follow the system theme or pin light or dark mode. The choice is remembered in this browser.
+
+Colors carry one meaning on every page: green is healthy or passed, amber is stale, pending, or needs a check, red is failed, unavailable, or critical, blue is guidance, and grey has no data or is not configured. Usage bars keep their series color until they cross a threshold (75% amber, 90% red; storage uses the 85% and 95% alert thresholds, pressure stalls 10% and 25%).
+
 ## Overview
 
 The resource strip shows CPU use, memory use, the first GPU's utilization, and currently running CI containers identified on the host. **Capacity over time** supports hour, day, week, and month views. Charts show bucket averages; the history API also retains peak values.
 
 **Needs attention** summarizes active thresholds and unavailable telemetry. **Integration coverage** opens Connections. **Storage headroom** shows mounted filesystem capacity; **Export snapshot** downloads a JSON snapshot without server integration credentials.
 
+**Where to start** directs support staff to critical conditions, memory/storage contention, connection checks, or the affected workload. It uses existing thresholds and collector freshness; a quiet dashboard does not establish health for an unavailable source.
+
+**Resource diagnostics**, on Overview and Host & hardware, shows CPU, memory and storage-wait averages, retained peaks, measurement counts and the latest point time. Averages use retained bucket means; peaks use the API's retained maxima. The history selector on Overview applies to these plots. The storage-pressure chart includes the 10% alert guide. **Filesystem risk ranking** orders mounts by the higher of byte or inode usage and reports free bytes. Last known readings are marked when the host source is stale or unavailable.
+
+**Network throughput** shows receive/send bytes per second, excluding the collector's Docker, veth, bridge and Tailscale prefixes. **CI queue over time** shows bucket means of pending jobs across configured GitLab projects. These historical plots describe the whole node, independently of workload scope. Missing samples remain gaps.
+
+## Browsing lists
+
+Record lists have independent pagination, result ranges and Previous/Next controls. Host inventories, services, processes, interfaces, sensors, runner facts and metrics, survey evidence, alerts, recommendations and connections now paginate alongside the existing container, image, workload, checkpoint and audit lists. New list controls offer 5, 10, 20 or 50 records per page. Changing page size returns to page one; changing a list's filters resets its position. Live updates clamp the page when records disappear. Counts and diagnostic calculations cover the full loaded sample, not just the visible page.
+
+Pagination applies to the records already collected. It does not remove upstream collection limits (for example, the top 15 host processes, newest 100 audit events, bounded image inventory or retained workload window). Selectors and fixed metric summaries remain visible together.
+
 ## Project and pipeline scope
 
-Use the repository, pipeline, image and evidence-window selectors to switch from global workload views to selected evidence. **Projects & pipelines** provides server pagination and project/image usage. **Survey & benchmarks** can capture and compare live checkpoints; its imported report remains historical. See [Live surveys](../operations/live-surveys.md). Node hardware readings and shared runner limits remain global.
+The scope bar appears on Overview, Docker, Runner stack, Projects & pipelines, and Survey & benchmarks; it is tinted while a filter is active. Use the repository, pipeline, image and evidence-window selectors to switch from global workload views to selected evidence. **Projects & pipelines** provides server pagination and project/image usage. **Survey & benchmarks** can capture and compare live checkpoints; its imported report remains historical. See [Live surveys](../operations/live-surveys.md). Node hardware readings and shared runner limits remain global.
 
 ## Host & hardware
 
@@ -49,6 +67,8 @@ Imported private surveys retain measured pipeline outcomes, timing comparisons, 
 Recent and active pipelines show branch, status, duration, and queued duration when the GitLab version supplies those fields. Jobs include their execution duration, queue duration, and assigned runner. Search job names/projects or filter pending, running, failed, and successful jobs.
 
 Counts cover the configured project sample; they are not instance-wide fleet counts. Runner facts show worker limits, request concurrency, and configured CPU/RAM budgets when exported by an administrator. Expand runner measurements for numeric Prometheus series; cumulative counters are not rates.
+
+**Pipeline diagnostics**, on Projects & pipelines and Runner stack, uses the selected scope within the GitLab collector sample. It shows outcome counts (including other/unknown states), success among success/failed pipelines, nearest-rank p95 execution for measured successful pipelines, and p95 job queue wait. Missing and negative timings are excluded; zero is a real measurement. Small samples can make p95 equal the maximum. The paginated job chart ranks measured execution durations and shows queue wait separately, with full job names and values below. Running jobs may have partial durations. Retained workloads outside the current GitLab collector sample remain in the workload table, but are not included in these diagnostics. Stale GitLab results carry a notice.
 
 ## Optimization
 

@@ -1,0 +1,58 @@
+import { useEffect, useState } from "react";
+import { Monitor, Moon, Sun } from "lucide-react";
+
+export type Theme = "system" | "light" | "dark";
+const key = "opsdeck.theme";
+
+export function storedTheme(): Theme {
+  try {
+    const value = localStorage.getItem(key);
+    return value === "light" || value === "dark" ? value : "system";
+  } catch {
+    return "system";
+  }
+}
+
+/** "system" removes the attribute so the prefers-color-scheme rules apply. */
+export function applyTheme(theme: Theme) {
+  const root = document.documentElement;
+  if (theme === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", theme);
+}
+
+const options = [
+  { value: "system", label: "Match system theme", icon: Monitor },
+  { value: "light", label: "Light theme", icon: Sun },
+  { value: "dark", label: "Dark theme", icon: Moon },
+] as const;
+
+export function ThemeToggle() {
+  const [theme, setTheme] = useState<Theme>(storedTheme);
+  useEffect(() => {
+    applyTheme(theme);
+    try {
+      if (theme === "system") localStorage.removeItem(key);
+      else localStorage.setItem(key, theme);
+    } catch {
+      // Storage can be blocked; the choice still applies to this page.
+    }
+  }, [theme]);
+  return (
+    <div className="theme-toggle" role="radiogroup" aria-label="Color theme">
+      {options.map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={theme === value}
+          aria-label={label}
+          title={label}
+          className={theme === value ? "active" : ""}
+          onClick={() => setTheme(value)}
+        >
+          <Icon size={15} />
+        </button>
+      ))}
+    </div>
+  );
+}
