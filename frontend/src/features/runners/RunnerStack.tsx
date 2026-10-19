@@ -1,3 +1,4 @@
+import { PaginatedList } from "../../components/PaginatedList";
 import { useState, type ReactNode } from "react";
 import {
   Bar,
@@ -115,61 +116,70 @@ export function SurveyPage({ source }: { source?: Source }) {
         </Section>
       )}
       <Section title="Benchmark pipelines" note={archive.source_name}>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Pipeline</th>
-                <th>Outcome</th>
-                <th>Passed jobs</th>
-                <th>Sum of job time</th>
-                <th>Observed wall time</th>
-                <th>First-job wait</th>
-                <th>Evidence</th>
-              </tr>
-            </thead>
-            <tbody>
-              {archive.benchmarks.map((b: any, i: number) => (
-                <tr key={b.pipeline_id}>
-                  <td>
-                    <button
-                      className="text-button"
-                      onClick={() => setSelected(i)}
-                    >
-                      #{b.pipeline_id}
-                    </button>
-                    <small>{b.label}</small>
-                  </td>
-                  <td>
-                    <Pill value={b.status} />
-                  </td>
-                  <td>
-                    {b.passed_jobs == null
-                      ? "—"
-                      : `${b.passed_jobs}/${b.total_jobs}`}
-                  </td>
-                  <td>{duration(b.runner_seconds)}</td>
-                  <td>{duration(b.wall_seconds)}</td>
-                  <td>{duration(b.queue_seconds)}</td>
-                  <td>
-                    {b.evidence}
-                    {b.url && (
-                      <small>
-                        <a
-                          href={safeUrl(b.url)}
-                          target="_blank"
-                          rel="noreferrer"
+        <PaginatedList
+          items={archive.benchmarks as any[]}
+          label="Benchmark pipelines"
+        >
+          {(pageRows) => (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Pipeline</th>
+                    <th>Outcome</th>
+                    <th>Passed jobs</th>
+                    <th>Sum of job time</th>
+                    <th>Observed wall time</th>
+                    <th>First-job wait</th>
+                    <th>Evidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.map((b: any) => (
+                    <tr key={b.pipeline_id}>
+                      <td>
+                        <button
+                          className="text-button"
+                          onClick={() =>
+                            setSelected(archive.benchmarks.indexOf(b))
+                          }
                         >
-                          Original pipeline
-                        </a>
-                      </small>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                          #{b.pipeline_id}
+                        </button>
+                        <small>{b.label}</small>
+                      </td>
+                      <td>
+                        <Pill value={b.status} />
+                      </td>
+                      <td>
+                        {b.passed_jobs == null
+                          ? "—"
+                          : `${b.passed_jobs}/${b.total_jobs}`}
+                      </td>
+                      <td>{duration(b.runner_seconds)}</td>
+                      <td>{duration(b.wall_seconds)}</td>
+                      <td>{duration(b.queue_seconds)}</td>
+                      <td>
+                        {b.evidence}
+                        {b.url && (
+                          <small>
+                            <a
+                              href={safeUrl(b.url)}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Original pipeline
+                            </a>
+                          </small>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </PaginatedList>
         <p className="panel-description">
           Job-time sum measures runner work. Wall time is first job start to
           last job end. Queue time is the wait before the first job; these are
@@ -178,47 +188,58 @@ export function SurveyPage({ source }: { source?: Source }) {
       </Section>
       {benchmarks.length > 0 && (
         <Section title="Execution and queue comparison" note="Recorded minutes">
-          <div className="chart">
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart
-                data={benchmarks}
-                margin={{ top: 20, right: 20, left: 0, bottom: 10 }}
+          <PaginatedList items={benchmarks} label="Benchmark plot">
+            {(pageRows) => (
+              <div
+                className="chart"
+                role="img"
+                aria-label="Recorded execution and queue minutes"
               >
-                <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
-                  stroke="var(--border-strong)"
-                />
-                <YAxis
-                  unit="m"
-                  tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
-                  stroke="var(--border-strong)"
-                />
-                <Tooltip
-                  formatter={(v: any) => `${Number(v).toFixed(1)} minutes`}
-                  cursor={{ fill: "var(--surface-3)" }}
-                  contentStyle={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
-                    color: "var(--text)",
-                  }}
-                />
-                <Legend wrapperStyle={{ color: "var(--text-muted)" }} />
-                <Bar
-                  dataKey="execution"
-                  name="Observed execution wall time"
-                  fill="var(--series-1)"
-                />
-                <Bar
-                  dataKey="queue"
-                  name="First-job queue wait"
-                  fill="var(--series-4)"
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart
+                    data={pageRows}
+                    margin={{ top: 20, right: 20, left: 0, bottom: 10 }}
+                  >
+                    <CartesianGrid
+                      vertical={false}
+                      stroke="var(--chart-grid)"
+                    />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
+                      stroke="var(--border-strong)"
+                    />
+                    <YAxis
+                      unit="m"
+                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
+                      stroke="var(--border-strong)"
+                    />
+                    <Tooltip
+                      formatter={(v: any) => `${Number(v).toFixed(1)} minutes`}
+                      cursor={{ fill: "var(--surface-3)" }}
+                      contentStyle={{
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        color: "var(--text)",
+                      }}
+                    />
+                    <Legend wrapperStyle={{ color: "var(--text-muted)" }} />
+                    <Bar
+                      dataKey="execution"
+                      name="Observed execution wall time"
+                      fill="var(--series-1)"
+                    />
+                    <Bar
+                      dataKey="queue"
+                      name="First-job queue wait"
+                      fill="var(--series-4)"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </PaginatedList>
         </Section>
       )}
       <Section
@@ -226,45 +247,52 @@ export function SurveyPage({ source }: { source?: Source }) {
         note="Recorded seconds"
         collapsed
       >
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Job</th>
-                {measured.map((b: any) => (
-                  <th key={b.pipeline_id}>#{b.pipeline_id}</th>
-                ))}
-                <th>Final vs baseline</th>
-              </tr>
-            </thead>
-            <tbody>
-              {archive.job_comparisons.map((j: any) => {
-                const baseline = j.seconds[0],
-                  end = j.seconds[j.seconds.length - 1],
-                  change =
-                    baseline > 0 && end != null
-                      ? ((baseline - end) / baseline) * 100
-                      : null;
-                return (
-                  <tr key={j.name}>
-                    <td>
-                      <strong>{j.name}</strong>
-                      {j.note && <small>{j.note}</small>}
-                    </td>
-                    {j.seconds.map((s: number | null, i: number) => (
-                      <td key={i}>{s == null ? "—" : `${s}s`}</td>
+        <PaginatedList
+          items={archive.job_comparisons as any[]}
+          label="Job timing comparisons"
+        >
+          {(pageRows) => (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Job</th>
+                    {measured.map((b: any) => (
+                      <th key={b.pipeline_id}>#{b.pipeline_id}</th>
                     ))}
-                    <td>
-                      {change == null
-                        ? "—"
-                        : `${Math.abs(change).toFixed(1)}% ${change >= 0 ? "faster" : "slower"}`}
-                    </td>
+                    <th>Final vs baseline</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {pageRows.map((j: any) => {
+                    const baseline = j.seconds[0],
+                      end = j.seconds[j.seconds.length - 1],
+                      change =
+                        baseline > 0 && end != null
+                          ? ((baseline - end) / baseline) * 100
+                          : null;
+                    return (
+                      <tr key={j.name}>
+                        <td>
+                          <strong>{j.name}</strong>
+                          {j.note && <small>{j.note}</small>}
+                        </td>
+                        {j.seconds.map((s: number | null, i: number) => (
+                          <td key={i}>{s == null ? "—" : `${s}s`}</td>
+                        ))}
+                        <td>
+                          {change == null
+                            ? "—"
+                            : `${Math.abs(change).toFixed(1)}% ${change >= 0 ? "faster" : "slower"}`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </PaginatedList>
       </Section>
       {pipeline && (
         <Section
@@ -292,35 +320,43 @@ export function SurveyPage({ source }: { source?: Source }) {
             <p className="panel-description">{pipeline.note}</p>
           )}
           {pipeline.jobs.length ? (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Job / stage</th>
-                    <th>Outcome</th>
-                    <th>Execution</th>
-                    <th>Queue</th>
-                    <th>Runner</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pipeline.jobs.map((j: any) => (
-                    <tr key={j.name}>
-                      <td>
-                        {j.name}
-                        <small>{j.stage}</small>
-                      </td>
-                      <td>
-                        <Pill value={j.status} />
-                      </td>
-                      <td>{duration(j.duration)}</td>
-                      <td>{duration(j.queued_duration)}</td>
-                      <td>{j.runner || "Not recorded"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <PaginatedList
+              items={pipeline.jobs as any[]}
+              label="Recorded jobs"
+              resetKey={pipeline.pipeline_id}
+            >
+              {(pageRows) => (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Job / stage</th>
+                        <th>Outcome</th>
+                        <th>Execution</th>
+                        <th>Queue</th>
+                        <th>Runner</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageRows.map((j: any) => (
+                        <tr key={j.name}>
+                          <td>
+                            {j.name}
+                            <small>{j.stage}</small>
+                          </td>
+                          <td>
+                            <Pill value={j.status} />
+                          </td>
+                          <td>{duration(j.duration)}</td>
+                          <td>{duration(j.queued_duration)}</td>
+                          <td>{j.runner || "Not recorded"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedList>
           ) : (
             <Empty text="Individual job records were not included for this pipeline. The source report records its overall outcome." />
           )}
@@ -328,11 +364,19 @@ export function SurveyPage({ source }: { source?: Source }) {
       )}
       <RecordedOptimizations archive={archive} />
       <Section title="Recorded notes and follow-ups" collapsed>
-        <div className="recorded-notes">
-          {archive.notes.map((note: string, i: number) => (
-            <p key={i}>{note}</p>
-          ))}
-        </div>
+        <PaginatedList
+          items={archive.notes as any[]}
+          label="Survey follow-ups"
+          initialSize={10}
+        >
+          {(pageRows) => (
+            <div className="recorded-notes">
+              {pageRows.map((note: string, i: number) => (
+                <p key={i}>{note}</p>
+              ))}
+            </div>
+          )}
+        </PaginatedList>
       </Section>
       <Section title="Source report and provenance">
         <div className="panel-description">
@@ -360,38 +404,45 @@ export function RecordedOptimizations({ archive }: { archive: any }) {
       title="Recorded optimizations and current checks"
       note="Original status is retained"
     >
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Change</th>
-              <th>Recorded status</th>
-              <th>Evidence</th>
-              <th>Current host check</th>
-            </tr>
-          </thead>
-          <tbody>
-            {archive.optimizations.map((o: any) => (
-              <tr key={o.key}>
-                <td>
-                  <strong>{o.title}</strong>
-                  <small>
-                    {o.scope} · {o.detail}
-                  </small>
-                </td>
-                <td>
-                  <Pill value={o.recorded_status} />
-                </td>
-                <td>{o.evidence || "Source report"}</td>
-                <td>
-                  <Pill value={o.current_check?.status || "not_verified"} />
-                  <small>{o.current_check?.detail}</small>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PaginatedList
+        items={archive.optimizations as any[]}
+        label="Recorded optimizations"
+      >
+        {(pageRows) => (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Change</th>
+                  <th>Recorded status</th>
+                  <th>Evidence</th>
+                  <th>Current host check</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((o: any) => (
+                  <tr key={o.key}>
+                    <td>
+                      <strong>{o.title}</strong>
+                      <small>
+                        {o.scope} · {o.detail}
+                      </small>
+                    </td>
+                    <td>
+                      <Pill value={o.recorded_status} />
+                    </td>
+                    <td>{o.evidence || "Source report"}</td>
+                    <td>
+                      <Pill value={o.current_check?.status || "not_verified"} />
+                      <small>{o.current_check?.detail}</small>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </PaginatedList>
     </Section>
   );
 }
@@ -871,34 +922,41 @@ export function RunnerInventory({
       </Section>
       {archive?.image_checks?.length > 0 && (
         <Section title="Survey toolchain availability" collapsed>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Recorded image tag</th>
-                  <th>Currently present</th>
-                </tr>
-              </thead>
-              <tbody>
-                {archive.image_checks.map((i: any) => (
-                  <tr key={i.tag}>
-                    <td>{i.tag}</td>
-                    <td>
-                      <Pill
-                        value={
-                          i.present == null
-                            ? "unknown"
-                            : i.present
-                              ? "verified"
-                              : "missing"
-                        }
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaginatedList
+            items={archive.image_checks as any[]}
+            label="Toolchain availability"
+          >
+            {(pageRows) => (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Recorded image tag</th>
+                      <th>Currently present</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((i: any) => (
+                      <tr key={i.tag}>
+                        <td>{i.tag}</td>
+                        <td>
+                          <Pill
+                            value={
+                              i.present == null
+                                ? "unknown"
+                                : i.present
+                                  ? "verified"
+                                  : "missing"
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedList>
         </Section>
       )}
       <Section
@@ -907,30 +965,37 @@ export function RunnerInventory({
         collapsed
       >
         {docker?.storage?.volumes?.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Volume</th>
-                  <th>Driver</th>
-                  <th>Size</th>
-                  <th>References</th>
-                  <th>Host path</th>
-                </tr>
-              </thead>
-              <tbody>
-                {docker.storage.volumes.map((v: any) => (
-                  <tr key={v.name}>
-                    <td>{v.name}</td>
-                    <td>{v.driver}</td>
-                    <td>{bytes(v.size_bytes)}</td>
-                    <td>{v.references ?? "—"}</td>
-                    <td>{v.mountpoint}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaginatedList
+            items={docker.storage.volumes as any[]}
+            label="Cache volumes"
+          >
+            {(pageRows) => (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Volume</th>
+                      <th>Driver</th>
+                      <th>Size</th>
+                      <th>References</th>
+                      <th>Host path</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((v: any) => (
+                      <tr key={v.name}>
+                        <td>{v.name}</td>
+                        <td>{v.driver}</td>
+                        <td>{bytes(v.size_bytes)}</td>
+                        <td>{v.references ?? "—"}</td>
+                        <td>{v.mountpoint}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedList>
         ) : (
           <Empty
             text={docker?.storage_error || "No volume usage data is available."}
