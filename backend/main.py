@@ -9,7 +9,6 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from backend.actions import Actions
@@ -20,6 +19,7 @@ from backend.collectors import DockerCollector, HostCollector, failure, gitlab_c
 from backend.config import Settings
 from backend.insights import insights
 from backend.store import Store
+from backend.web import HashedAssets, SelectiveGZip
 from backend.findings import collect_findings, observations
 
 logger = logging.getLogger("opsdeck")
@@ -163,6 +163,7 @@ def create_app(settings=None, collect=True, action_factory=None, operation_facto
         operations.stop()
 
     app = FastAPI(title="OpsDeck", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(SelectiveGZip)
     app.state.snapshot = state
     app.state.store = store
     app.state.history_error = None
@@ -202,7 +203,7 @@ def create_app(settings=None, collect=True, action_factory=None, operation_facto
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok"}
+        return {"status": "ok", "mode": "standalone", "version": settings.version}
 
     @app.get("/api/snapshot", dependencies=[Depends(authenticate)])
     def snapshot():
@@ -336,13 +337,13 @@ def create_app(settings=None, collect=True, action_factory=None, operation_facto
         return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
     if settings.static.exists():
-        app.mount("/assets", StaticFiles(directory=settings.static / "assets"), name="assets")
+        app.mount("/assets", HashedAssets(directory=settings.static / "assets"), name="assets")
 
         @app.get("/{path:path}")
         def frontend(path: str):
             if path.startswith("api/"):
                 raise HTTPException(404, "Unknown API route")
-            return FileResponse(settings.static / "index.html")
+            return FileResponse(settings.static / "index.html", headers={"Cache-Control": "no-cache"})
     else:
         @app.get("/")
         def unbuilt():

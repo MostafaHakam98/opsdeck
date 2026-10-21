@@ -60,10 +60,10 @@ See [Repository layout](repository-layout.md) for the directory hierarchy and co
 
 | Method / route | Authentication | Purpose |
 |---|---|---|
-| `GET /healthz` | None | Minimal liveness |
+| `GET /healthz` | None | Liveness: `{status, mode, version}` |
 | `GET /api/snapshot` | Bearer | Sources, freshness, alerts, recommendations |
 | `GET /api/history?hours=1` | Bearer | At most 600 averaged buckets, with peaks |
-| `GET /api/events` | Bearer | Newest 100 events |
+| `GET /api/events?limit=100&q=` | Bearer | Newest events; `limit` 1..1000, optional case-insensitive `q` substring on title/detail (central mode) |
 | `GET /api/metrics` | Bearer | Prometheus gauges |
 | `POST /api/actions/preview` | Bearer | Validated 60-second action plan |
 | `POST /api/actions/execute` | Bearer | One-use confirmed stop/restart |
@@ -73,6 +73,23 @@ See [Repository layout](repository-layout.md) for the directory hierarchy and co
 | `POST /api/operations/execute` | Bearer | One-use execution; image work is queued |
 | `POST /api/operations/uploads?kind=image&name=file.tar` | Bearer | Bounded streaming archive upload; kind can also be context |
 | `POST /api/operations/uploads/{id}/discard` | Bearer | Remove an unused staged upload |
+
+Central mode (`OPSDECK_MODE=central`) serves the fleet routes below instead of local collectors and controls:
+
+| Method / route | Authentication | Purpose |
+|---|---|---|
+| `GET /api/fleet` | Bearer | Nodes (with `notes`, `maintenance`), `summary` counts and online averages, sorted `alerts`, `version` |
+| `GET /api/fleet/pulse?minutes=60&buckets=60` | Bearer | Per-node CPU, memory, and GPU bucket averages for the pulse wall; `null` where no samples; minutes 5..1440, buckets 10..120 |
+| `GET /api/fleet/history?hours=1&cluster=` | Bearer | Fleet aggregate over 1..168 hours, at most about 600 points: per-host bucket averages, then the mean and peak across hosts, summed CI jobs, and reporting host count |
+| `GET /api/fleet/metrics` | Bearer or metrics token | Prometheus gauges per node (`node`, `cluster`, `node_id` labels), alert counts, and build info |
+| `POST /api/fleet/nodes` | Bearer | Enroll a host; returns its one-time agent credential |
+| `POST /api/fleet/nodes/{id}/settings` | Bearer | Change `name`, `cluster`, `notes`, or `maintenance`; audited; the agent credential is unchanged |
+| `POST /api/fleet/nodes/{id}/revoke`, `/rotate` | Bearer | Disconnect or reissue a host's agent credential |
+| `GET /api/fleet/nodes/{id}`, `/history` | Bearer | One host's latest sources and history |
+| `GET, POST /api/fleet/nodes/{id}/workspace/{path}` | Bearer | Allowlisted relay to the host's own API |
+| `POST /api/agent/telemetry`, `/api/agent/workspace/*` | Agent credential | Outbound agent delivery and relay claims |
+
+Responses of at least 1 KiB are gzip-compressed when the client accepts it, except the workspace relay and `/api/agent/*`, which pass bodies through unchanged. Content-hashed `/assets/*` files are served with `Cache-Control: public, max-age=31536000, immutable`; the SPA `index.html` uses `no-cache` so a deployment is picked up on the next load.
 
 The browser and API share an origin in production. Responses include content security, no-frame, no-sniff, and referrer headers; API responses are not cached. Authentication failures are rate limited. The application uses one operator credential, not individual identities or RBAC.
 

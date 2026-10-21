@@ -83,6 +83,7 @@ export function EventHistory({ events }: { events: Event[] }) {
                 </small>
               </div>
               <span className={`badge ${tone(event.severity)}`}>
+                <i />
                 {event.severity}
               </span>
             </div>

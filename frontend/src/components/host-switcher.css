@@ -3,8 +3,21 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+  height: 36px;
   margin: 0;
+  padding-left: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
   color: var(--text-muted);
+  transition: border-color 0.12s;
+}
+.host-switcher:hover {
+  border-color: var(--border-strong);
+}
+.host-switcher:focus-within {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .host-switcher > svg {
   flex-shrink: 0;
@@ -13,26 +26,36 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  padding: 8px 26px 8px 8px;
-  border: 1px solid transparent;
-  background-color: var(--surface);
+  height: 100%;
+  padding: 0 28px 0 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
   color: var(--text);
   text-overflow: ellipsis;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
 }
 .host-switcher select:hover {
-  background-color: var(--surface-2);
-  border-color: var(--border);
+  border-color: transparent;
 }
 .host-switcher select:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline: 0;
+  box-shadow: none;
 }
-.topbar > .host-switcher,
+.host-switcher option,
+.host-switcher optgroup {
+  background: var(--surface);
+  color: var(--text);
+}
 .fleet-topbar > .host-switcher {
   flex: 1;
   max-width: 640px;
+}
+.topbar > .host-switcher {
+  flex: 0 1 380px;
+  min-width: 160px;
 }
 @media (max-width: 600px) {
   .topbar {
@@ -45,7 +68,7 @@
   .topbar > .host-switcher {
     flex-basis: 100%;
   }
-  .topbar > div {
+  .topbar > .topbar-tools {
     margin-left: auto;
   }
 }

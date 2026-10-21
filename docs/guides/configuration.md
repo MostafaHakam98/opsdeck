@@ -9,6 +9,7 @@ Native mode loads `.env` without evaluating shell code. Whitespace around `=` an
 | Setting | Default | Use |
 |---|---|---|
 | `OPSDECK_TOKEN` | Required | Random secret of at least 32 characters; one operator role |
+| `OPSDECK_METRICS_TOKEN` | Empty | Central mode, optional: a separate secret of at least 32 characters accepted only by `GET /api/fleet/metrics`, so Prometheus never holds the operator token |
 | `OPSDECK_BIND` | `127.0.0.1` native | Listen address; host Compose honors it |
 | `OPSDECK_PORT` | `8080` | Native/host port; portable Compose publishes this external port |
 | `OPSDECK_DB` | `./data/opsdeck.sqlite` native | SQLite path; Compose sets `/data/opsdeck.sqlite` |
@@ -16,6 +17,7 @@ Native mode loads `.env` without evaluating shell code. Whitespace around `=` an
 | `OPSDECK_SAMPLE_SECONDS` | `10`, minimum `5` | Host/history sampling interval |
 | `OPSDECK_RETENTION_DAYS` | `30`, minimum `1` | Metrics and threshold-event retention |
 | `OPSDECK_ACTIONS` | `false` | Opt-in stop/restart operations |
+| `OPSDECK_VERSION` | `SOURCE_COMMIT` file, else `dev` | Build label reported by `/healthz`, the fleet overview, and `opsdeck_build_info`; when unset, the first line of a `SOURCE_COMMIT` file at the repository root is used |
 | `OPSDECK_ENV_FILE` | `.env` native | Alternate launcher config file; image uses `/data/config.env` |
 | `OPSDECK_SERVICES` | Docker, runner, Tailscale units | Up to 12 comma-separated `.service` unit names |
 | `OPSDECK_SERVICES_FILE` | Empty | Optional sanitized native service snapshot, instead of direct DBus reads; see deployment guide |

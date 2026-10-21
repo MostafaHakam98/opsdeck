@@ -730,6 +730,7 @@ export function OperatorConsole({
                       </td>
                       <td>
                         <span className={`badge ${tone(job.status)}`}>
+                          <i />
                           {job.status}
                         </span>
                       </td>

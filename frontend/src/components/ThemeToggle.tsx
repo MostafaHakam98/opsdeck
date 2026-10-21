@@ -38,7 +38,27 @@ export function ThemeToggle() {
     }
   }, [theme]);
   return (
-    <div className="theme-toggle" role="radiogroup" aria-label="Color theme">
+    <div
+      className="theme-toggle"
+      role="radiogroup"
+      aria-label="Color theme"
+      onKeyDown={(event) => {
+        const step = {
+          ArrowRight: 1,
+          ArrowDown: 1,
+          ArrowLeft: -1,
+          ArrowUp: -1,
+        }[event.key];
+        if (!step) return;
+        event.preventDefault();
+        const index = options.findIndex((option) => option.value === theme);
+        const next = (index + step + options.length) % options.length;
+        setTheme(options[next].value);
+        const buttons =
+          event.currentTarget.querySelectorAll<HTMLButtonElement>("button");
+        buttons[next]?.focus();
+      }}
+    >
       {options.map(({ value, label, icon: Icon }) => (
         <button
           key={value}
@@ -47,10 +67,11 @@ export function ThemeToggle() {
           aria-checked={theme === value}
           aria-label={label}
           title={label}
+          tabIndex={theme === value ? 0 : -1}
           className={theme === value ? "active" : ""}
           onClick={() => setTheme(value)}
         >
-          <Icon size={15} />
+          <Icon size={15} aria-hidden="true" />
         </button>
       ))}
     </div>

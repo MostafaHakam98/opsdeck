@@ -47,7 +47,7 @@ def test_central_never_instantiates_local_collectors_or_controls(tmp_path, monke
         monkeypatch.setattr("backend.main." + name, forbidden)
     app = create_app(Settings(mode="central", token=TOKEN, db=str(tmp_path / "central.sqlite"), host_root="/unmounted-runner", procfs_path="/unmounted-runner/proc"))
     with TestClient(app) as client:
-        assert client.get("/healthz").json() == {"status": "ok", "mode": "central"}
+        assert client.get("/healthz").json() == {"status": "ok", "mode": "central", "version": app.state.version}
         assert client.get("/api/fleet", headers=OPERATOR).json()["nodes"] == []
         assert client.post("/api/operations/execute", headers=OPERATOR, json={}).status_code in (404, 405)
     for key in ("actions", "operations"):
@@ -228,3 +228,257 @@ def test_agent_rejects_insecure_or_ambiguous_server_urls(server):
 def test_agent_allows_verified_https_and_loopback_development():
     for server in ("https://opsdeck.example", "http://127.0.0.1:8080", "http://[::1]:8080"):
         AgentSettings(server=server, token="node." + "s" * 64).validate()
+
+
+NOW = 1_700_000_030.0
+
+
+def node_row(name="runner-01", status="online", maintenance=False, sources=None, **metrics):
+    return {"id": "id-" + name, "name": name, "cluster": "cluster-a", "status": status, "maintenance": maintenance, "last_seen": NOW - 300,
+            "age_seconds": 5, "metrics": {**dict.fromkeys(("cpu", "memory", "gpu", "io_pressure", "ci_running")), **metrics}, "source_status": sources or {}}
+
+
+def put_samples(fleet, identifier, rows):
+    with fleet.connect() as db:
+        db.executemany("INSERT INTO fleet_samples VALUES (?,?,?,?)", [(identifier, str(uuid4()), ts, json.dumps(values)) for ts, values in rows])
+
+
+def test_schema_migration_adds_defaulted_columns_idempotently_and_stays_rollback_compatible(tmp_path):
+    import sqlite3
+    from backend.fleet import Fleet
+    path = str(tmp_path / "old.sqlite")
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE fleet_nodes (id TEXT PRIMARY KEY, name TEXT NOT NULL, cluster TEXT NOT NULL, token_hash TEXT NOT NULL, created_at REAL NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, last_seen REAL, collected_at REAL, snapshot TEXT, summary TEXT)")
+        db.execute("INSERT INTO fleet_nodes(id,name,cluster,token_hash,created_at) VALUES ('old','legacy','a','x',1)")
+    fleet = Fleet(path)
+    Fleet(path)
+    node = fleet.node("old", 10)
+    assert (node["notes"], node["maintenance"], node["status"]) == ("", False, "waiting")
+    with fleet.connect() as db:
+        columns = [row[1] for row in db.execute("PRAGMA table_info(fleet_nodes)")]
+        assert columns.count("notes") == 1 and columns.count("maintenance") == 1
+        # The previous release inserts and reads with explicit column lists only.
+        db.execute("INSERT INTO fleet_nodes(id,name,cluster,token_hash,created_at) VALUES ('new','n','a','y',2)")
+        assert db.execute("SELECT id,name,cluster,created_at,revoked,last_seen,collected_at,summary FROM fleet_nodes WHERE id='new'").fetchone()[0] == "new"
+    assert fleet.node("new", 10)["maintenance"] is False
+
+
+def test_alert_rules_thresholds_suppression_and_order():
+    from backend.fleet import fleet_alerts
+    nodes = [node_row("zeta", cpu=95, memory=85, io_pressure=12, sources={"gpu": "unavailable", "docker": "degraded", "host": "healthy", "runner": "not_configured"}),
+             node_row("alpha", cpu=80, memory=79.9, io_pressure=25),
+             node_row("beta", status="offline"), node_row("gamma", status="stale"),
+             node_row("delta", status="waiting"), node_row("eps", status="revoked", cpu=99),
+             node_row("maint", status="offline", maintenance=True), node_row("maint2", maintenance=True, cpu=99),
+             node_row("old", status="offline", cpu=99)]
+    nodes[3]["age_seconds"] = 600
+    alerts = fleet_alerts(nodes, NOW)
+    summary = [(a["node_name"], a["severity"], a["kind"], a["title"]) for a in alerts]
+    assert summary == [("alpha", "critical", "io_pressure", "High I/O pressure"), ("beta", "critical", "offline", "Agent offline"),
+                       ("old", "critical", "offline", "Agent offline"), ("zeta", "critical", "cpu", "High CPU load"),
+                       ("alpha", "warning", "cpu", "High CPU load"), ("gamma", "warning", "stale", "Telemetry stale"),
+                       ("zeta", "warning", "memory", "High memory use"), ("zeta", "warning", "io_pressure", "High I/O pressure"),
+                       ("zeta", "warning", "source", "GPU source unavailable"), ("zeta", "warning", "source", "Docker source degraded")]
+    assert len({a["key"] for a in alerts}) == len(alerts)
+    offline = next(a for a in alerts if a["kind"] == "offline")
+    assert offline["value"] == 300 and "5 min" in offline["detail"] and offline["cluster"] == "cluster-a"
+    assert next(a for a in alerts if a["kind"] == "stale")["value"] == 600
+    assert next(a for a in alerts if a["kind"] == "cpu")["value"] == 95
+    assert set(alerts[0]) == {"key", "node_id", "node_name", "cluster", "severity", "kind", "title", "detail", "value"}
+    assert fleet_alerts([node_row(cpu=79.9, memory=10, io_pressure=9.9)], NOW) == []
+
+
+def test_summary_counts_and_online_averages():
+    from backend.fleet import fleet_alerts, fleet_summary
+    nodes = [node_row("a", cpu=10, memory=20, ci_running=2), node_row("b", cpu=95, memory=None, ci_running=1.5, gpu=40),
+             node_row("c", status="offline", cpu=99, ci_running=9), node_row("d", status="waiting"), node_row("e", status="revoked"),
+             node_row("f", status="stale", maintenance=True)]
+    nodes[-1]["cluster"] = "cluster-b"
+    alerts = fleet_alerts(nodes, NOW)
+    assert fleet_summary(nodes, alerts) == {"hosts": 6, "online": 2, "waiting": 1, "stale": 1, "offline": 1, "revoked": 1, "maintenance": 1,
+                                            "clusters": 2, "ci_running": 3.5, "avg_cpu": 52.5, "avg_memory": 20, "avg_gpu": 40,
+                                            "alerts_critical": 2, "alerts_warning": 0}
+    empty = fleet_summary([node_row("x", status="offline", cpu=50)], [])
+    assert (empty["avg_cpu"], empty["avg_memory"], empty["avg_gpu"], empty["ci_running"]) == (None, None, None, None)
+
+
+def test_overview_carries_notes_maintenance_summary_alerts_and_version(tmp_path):
+    app = create_app(Settings(mode="central", token=TOKEN, db=str(tmp_path / "fleet.sqlite"), version="1.4.0-test"), collect=False)
+    with TestClient(app) as client:
+        node = enroll(client)
+        client.post("/api/agent/telemetry", headers=agent(node), json=envelope(cpu=97))
+        body = client.get("/api/fleet", headers=OPERATOR).json()
+        assert body["version"] == "1.4.0-test" and client.get("/healthz").json()["version"] == "1.4.0-test"
+        assert (body["nodes"][0]["notes"], body["nodes"][0]["maintenance"]) == ("", False)
+        assert body["summary"]["online"] == 1 and body["summary"]["avg_cpu"] == 97 and body["summary"]["ci_running"] == 2
+        assert [(a["kind"], a["severity"], a["node_id"]) for a in body["alerts"]] == [("cpu", "critical", node["id"])]
+        assert body["summary"]["alerts_critical"] == 1
+
+
+def test_pulse_buckets_averages_with_null_gaps(app, monkeypatch):
+    fleet = app.state.fleet
+    a, b = fleet.enroll("a", "c1"), fleet.enroll("b", "c2")
+    monkeypatch.setattr(time, "time", lambda: NOW)
+    first = fleet.pulse(10, 10)
+    start, width = first["start"], first["bucket_seconds"]
+    assert width == 60 and first["end"] - start == 600 and start <= NOW - 540 and first["end"] > NOW and first["end"] % 60 == 0
+    put_samples(fleet, a["id"], [(start + 1, {"cpu": 10, "memory": 40}), (start + 59, {"cpu": 30, "memory": None, "gpu": 5}),
+                                 (start + 9 * 60 + 2, {"cpu": 50}), (start - 1, {"cpu": 99}), (first["end"], {"cpu": 99})])
+    result = fleet.pulse(10, 10)
+    assert set(result["nodes"]) == {a["id"], b["id"]}
+    assert result["nodes"][a["id"]]["cpu"] == [20.0] + [None] * 8 + [50.0]
+    assert result["nodes"][a["id"]]["memory"] == [40.0] + [None] * 9
+    assert result["nodes"][a["id"]]["gpu"] == [5.0] + [None] * 9
+    assert result["nodes"][b["id"]] == {"cpu": [None] * 10, "memory": [None] * 10, "gpu": [None] * 10}
+    monkeypatch.undo()
+    with TestClient(app) as client:
+        assert client.get("/api/fleet/pulse").status_code == 401
+        default = client.get("/api/fleet/pulse", headers=OPERATOR).json()
+        assert default["bucket_seconds"] == 60 and len(default["nodes"][a["id"]]["cpu"]) == 60
+        for query in ("minutes=4", "minutes=1441", "buckets=9", "buckets=121"):
+            assert client.get("/api/fleet/pulse?" + query, headers=OPERATOR).status_code == 422
+
+
+def test_fleet_history_averages_hosts_not_samples_and_filters_cluster(app, monkeypatch):
+    fleet = app.state.fleet
+    a, b = fleet.enroll("a", "c1"), fleet.enroll("b", "c2")
+    monkeypatch.setattr(time, "time", lambda: NOW)
+    start, width = NOW - 3600, 3600 / 599
+    base = start + width * 10 + 1
+    put_samples(fleet, a["id"], [(base + i * .01, {"cpu": 10, "memory": 20, "gpu": None, "ci_running": 2}) for i in range(3)])
+    put_samples(fleet, b["id"], [(base, {"cpu": 40, "memory": 60, "gpu": 30, "ci_running": 1}), (base + .5, {"cpu": 50, "memory": 70, "gpu": 30, "ci_running": 2})])
+    put_samples(fleet, b["id"], [(base + width * 100, {"cpu": 5, "memory": 5, "ci_running": None})])
+    rows = fleet.fleet_history(1)
+    assert len(rows) == 2
+    first = rows[0]
+    assert (first["cpu"], first["cpu_peak"], first["memory"], first["memory_peak"], first["gpu"], first["ci_running"], first["hosts"]) == (27.5, 50, 42.5, 70, 30, 3.5, 2)
+    assert first["ts"] == base + .5
+    assert (rows[1]["hosts"], rows[1]["ci_running"], rows[1]["gpu"]) == (1, None, None)
+    only_b = fleet.fleet_history(1, "c2")
+    assert [row["hosts"] for row in only_b] == [1, 1] and only_b[0]["cpu"] == 45
+    assert fleet.fleet_history(1, "missing") == []
+    monkeypatch.undo()
+    with TestClient(app) as client:
+        assert client.get("/api/fleet/history", headers=OPERATOR).status_code == 200
+        assert client.get("/api/fleet/history?hours=24&cluster=c1", headers=OPERATOR).json() == []
+        for query in ("hours=0", "hours=169", "cluster="):
+            assert client.get("/api/fleet/history?" + query, headers=OPERATOR).status_code == 422
+
+
+def test_node_settings_update_audit_and_validation(app):
+    with TestClient(app) as client:
+        node = enroll(client)
+        assert client.post(f'/api/fleet/nodes/{node["id"]}/settings', json={"notes": "x"}).status_code == 401
+        before = len(client.get("/api/events", headers=OPERATOR).json())
+        result = client.post(f'/api/fleet/nodes/{node["id"]}/settings', headers=OPERATOR, json={"notes": " Disk swap Friday ", "maintenance": True})
+        assert result.status_code == 200, result.text
+        updated = result.json()
+        listed = client.get("/api/fleet", headers=OPERATOR).json()["nodes"][0]
+        assert updated == {**listed, "age_seconds": updated["age_seconds"]}
+        assert (updated["notes"], updated["maintenance"]) == ("Disk swap Friday", True)
+        events = client.get("/api/events", headers=OPERATOR).json()
+        assert [(e["title"], e["detail"]) for e in events[:2]] == [("Maintenance started", "runner-01 in cluster-a"), ("Host settings changed", "runner-01: notes")]
+        renamed = client.post(f'/api/fleet/nodes/{node["id"]}/settings', headers=OPERATOR, json={"name": "runner-02", "cluster": "cluster-b", "maintenance": False}).json()
+        assert (renamed["name"], renamed["cluster"], renamed["notes"], renamed["maintenance"]) == ("runner-02", "cluster-b", "Disk swap Friday", False)
+        events = client.get("/api/events", headers=OPERATOR).json()
+        assert [(e["title"], e["detail"]) for e in events[:2]] == [("Maintenance ended", "runner-02 in cluster-b"), ("Host settings changed", "runner-02: name (was runner-01), cluster")]
+        unchanged = client.post(f'/api/fleet/nodes/{node["id"]}/settings', headers=OPERATOR, json={"name": "runner-02", "notes": None})
+        assert unchanged.status_code == 200 and len(client.get("/api/events", headers=OPERATOR).json()) == before + 4
+        # The agent credential is unaffected by identity changes.
+        assert client.post("/api/agent/telemetry", headers=agent(node), json=envelope()).status_code == 200
+        assert client.post("/api/fleet/nodes/" + str(uuid4()) + "/settings", headers=OPERATOR, json={"notes": "x"}).status_code == 404
+        for bad in ({"name": " "}, {"cluster": ""}, {"name": "x" * 121}, {"notes": "x" * 501}, {"token": "x"}, {"maintenance": "sometimes"}):
+            assert client.post(f'/api/fleet/nodes/{node["id"]}/settings', headers=OPERATOR, json=bad).status_code == 422, bad
+        assert client.post(f'/api/fleet/nodes/{node["id"]}/settings', headers=OPERATOR, json={"notes": ""}).json()["notes"] == ""
+
+
+def test_maintenance_silences_alerts_until_it_ends(app):
+    with TestClient(app) as client:
+        node = enroll(client)
+        client.post("/api/agent/telemetry", headers=agent(node), json=envelope())
+        with app.state.fleet.connect() as db:
+            db.execute("UPDATE fleet_nodes SET last_seen=?", (time.time() - 300,))
+        assert [a["kind"] for a in client.get("/api/fleet", headers=OPERATOR).json()["alerts"]] == ["offline"]
+        client.post(f'/api/fleet/nodes/{node["id"]}/settings', headers=OPERATOR, json={"maintenance": True})
+        body = client.get("/api/fleet", headers=OPERATOR).json()
+        assert body["alerts"] == [] and body["summary"]["maintenance"] == 1 and body["summary"]["alerts_critical"] == 0
+
+
+def test_events_limit_and_case_insensitive_literal_filter(app):
+    fleet = app.state.fleet
+    for index in range(5):
+        fleet.event("action", "info", f"Title {index}", "detail")
+    fleet.event("action", "info", "Disk", "Usage 100%_FULL on Runner-07")
+    with TestClient(app) as client:
+        assert len(client.get("/api/events?limit=2", headers=OPERATOR).json()) == 2
+        assert len(client.get("/api/events", headers=OPERATOR).json()) == 6
+        assert [e["title"] for e in client.get("/api/events?q=runner-07", headers=OPERATOR).json()] == ["Disk"]
+        assert [e["title"] for e in client.get("/api/events?q=TITLE 3", headers=OPERATOR).json()] == ["Title 3"]
+        assert [e["title"] for e in client.get("/api/events?q=0%25_f", headers=OPERATOR).json()] == ["Disk"]
+        assert client.get("/api/events?q=%25", headers=OPERATOR).json()[0]["title"] == "Disk"
+        assert len(client.get("/api/events?q=%25", headers=OPERATOR).json()) == 1
+        assert len(client.get("/api/events?q=title&limit=3", headers=OPERATOR).json()) == 3
+        for query in ("limit=0", "limit=1001", "q=" + "x" * 201):
+            assert client.get("/api/events?" + query, headers=OPERATOR).status_code == 422
+
+
+def test_prometheus_exposition_and_label_escaping(tmp_path):
+    from backend.fleet import label_value
+    app = create_app(Settings(mode="central", token=TOKEN, db=str(tmp_path / "fleet.sqlite"), version='v"1'), collect=False)
+    fleet = app.state.fleet
+    node = fleet.enroll('run"ner\\01', "cluster\na")
+    fleet.ingest(fleet.credential(node["token"]), Telemetry.model_validate(envelope(cpu=95)), 30)
+    idle = fleet.enroll("idle", "b")
+    assert label_value('a\\b"c\nd') == 'a\\\\b\\"c\\nd'
+    with TestClient(app) as client:
+        assert client.get("/api/fleet/metrics").status_code == 401
+        result = client.get("/api/fleet/metrics", headers=OPERATOR)
+        assert result.headers["content-type"].startswith("text/plain; version=0.0.4")
+        lines = result.text.splitlines()
+        labels = f'node="run\\"ner\\\\01",cluster="cluster\\na",node_id="{node["id"]}"'
+        for line in (f"opsdeck_node_up{{{labels}}} 1", f"opsdeck_node_cpu_percent{{{labels}}} 95", f"opsdeck_node_memory_percent{{{labels}}} 50",
+                     f"opsdeck_node_ci_running{{{labels}}} 2", f"opsdeck_node_maintenance{{{labels}}} 0",
+                     f'opsdeck_node_up{{node="idle",cluster="b",node_id="{idle["id"]}"}} 0',
+                     'opsdeck_fleet_alerts{severity="critical"} 1', 'opsdeck_fleet_alerts{severity="warning"} 0',
+                     'opsdeck_build_info{version="v\\"1"} 1', "# TYPE opsdeck_node_up gauge"):
+            assert line in lines, line
+        assert any(line.startswith(f"opsdeck_node_age_seconds{{{labels}}} ") for line in lines)
+        assert not any(line.startswith("opsdeck_node_gpu_percent{") for line in lines)
+        assert not any(f'node_id="{idle["id"]}"' in line for line in lines if line.startswith("opsdeck_node_cpu_percent"))
+        assert result.text.endswith("\n") and all(line.startswith(("#", "opsdeck_")) for line in lines)
+
+
+def test_build_version_sources(tmp_path, monkeypatch):
+    import backend.config as config
+    monkeypatch.setattr(config, "__file__", str(tmp_path / "backend" / "config.py"))
+    monkeypatch.delenv("OPSDECK_VERSION", raising=False)
+    assert config.build_version() == "dev"
+    (tmp_path / "SOURCE_COMMIT").write_text("abc1234\n")
+    assert config.build_version() == "abc1234" and Settings().version == "abc1234"
+    monkeypatch.setenv("OPSDECK_VERSION", " 2.0.0 ")
+    assert config.build_version() == "2.0.0"
+
+
+def test_single_node_lookup_and_unknown_workspace_node(app):
+    with TestClient(app) as client:
+        node = enroll(client)
+        enroll(client, "runner-02")
+        assert app.state.fleet.node(node["id"], 10)["name"] == "runner-01"
+        assert client.get("/api/fleet/nodes/" + str(uuid4()), headers=OPERATOR).status_code == 404
+        assert client.get("/api/fleet/nodes/" + str(uuid4()) + "/workspace/snapshot", headers=OPERATOR).status_code == 404
+        assert client.get(f'/api/fleet/nodes/{node["id"]}', headers=OPERATOR).json()["node"]["name"] == "runner-01"
+
+
+def test_metrics_token_is_scrape_only_and_validated(tmp_path):
+    scrape = "s" * 40
+    app = create_app(Settings(mode="central", token=TOKEN, db=str(tmp_path / "fleet.sqlite"), metrics_token=scrape), collect=False)
+    with TestClient(app) as client:
+        reader = {"Authorization": "Bearer " + scrape}
+        assert client.get("/api/fleet/metrics", headers=reader).status_code == 200
+        assert client.get("/api/fleet/metrics", headers=OPERATOR).status_code == 200
+        for path in ("/api/fleet", "/api/events", "/api/fleet/pulse"):
+            assert client.get(path, headers=reader).status_code == 401
+        assert client.post("/api/fleet/nodes", headers=reader, json={"name": "x", "cluster": "y"}).status_code == 401
+    for bad in ("short", TOKEN):
+        with pytest.raises(ValueError, match="OPSDECK_METRICS_TOKEN"):
+            Settings(mode="central", token=TOKEN, db=str(tmp_path / "x.sqlite"), metrics_token=bad).validate()

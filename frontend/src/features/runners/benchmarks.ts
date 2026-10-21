@@ -86,7 +86,7 @@ export function reportMarkdown(
     (row: Benchmark) => row.pipeline_id === after.pipeline_id,
   );
   const lines = [
-    `# ${text(archive.title)} — speedup report`,
+    `# ${text(archive.title)}: speedup report`,
     `Recorded: ${text(archive.recorded_on)}. Source: ${text(archive.source_name)}.`,
     `Generated: ${new Date().toISOString()}. Current host checks reflect the snapshot used for this export.`,
     `Comparison: #${before.pipeline_id} (${text(before.label)}, ${text(before.status)}) → #${after.pipeline_id} (${text(after.label)}, ${text(after.status)}).`,
@@ -97,7 +97,7 @@ export function reportMarkdown(
     "|---|---|---|---|---|",
     ...timingRows(before, after).map(
       (row) =>
-        `| ${row.name} | ${duration(row.before)} | ${duration(row.after)} | ${changeLabel(row.comparison)} | ${row.comparison?.factor == null ? "—" : row.comparison.factor.toFixed(2) + "×"} |`,
+        `| ${row.name} | ${duration(row.before)} | ${duration(row.after)} | ${changeLabel(row.comparison)} | ${row.comparison?.factor == null ? "n/a" : row.comparison.factor.toFixed(2) + "×"} |`,
     ),
     "",
     "Queue + execution is derived from the two recorded timings. Execution speedup excludes queue wait; summed job time is runner work, not throughput.",

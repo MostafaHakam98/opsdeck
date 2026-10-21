@@ -156,7 +156,7 @@ export function WorkloadSummary({ view }: { view?: WorkloadView }) {
         ].map(([name, value]) => (
           <div key={name}>
             <span>{name}</span>
-            <strong>{value ?? "—"}</strong>
+            <strong>{value ?? "n/a"}</strong>
           </div>
         ))}
       </div>

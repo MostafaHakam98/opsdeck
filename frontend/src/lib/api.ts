@@ -84,7 +84,7 @@ export async function api<T>(
   return response.json();
 }
 export function bytes(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
+  if (value == null || !Number.isFinite(value)) return "n/a";
   if (value === 0) return "0 B";
   const index = Math.min(
     4,
@@ -93,10 +93,10 @@ export function bytes(value: number | null | undefined): string {
   return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${["B", "KiB", "MiB", "GiB", "TiB"][index]}`;
 }
 export function pct(value: number | null | undefined) {
-  return value == null ? "—" : `${value.toFixed(1)}%`;
+  return value == null ? "n/a" : `${value.toFixed(1)}%`;
 }
 export function duration(value: number | null | undefined) {
-  if (value == null) return "—";
+  if (value == null) return "n/a";
   value = Math.round(value);
   if (value < 60) return `${Math.round(value)}s`;
   if (value < 3600)

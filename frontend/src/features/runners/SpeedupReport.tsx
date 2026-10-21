@@ -96,7 +96,7 @@ export function SpeedupReport({ archive }: { archive: any }) {
             }
           >
             {execution?.factor == null
-              ? "—"
+              ? "n/a"
               : `${execution.factor.toFixed(2)}×`}
           </strong>
           <p>
@@ -116,7 +116,7 @@ export function SpeedupReport({ archive }: { archive: any }) {
             }
           >
             {work?.reductionPercent == null
-              ? "—"
+              ? "n/a"
               : `${work.reductionPercent.toFixed(1)}%`}
           </strong>
           <p>
@@ -243,6 +243,7 @@ export function SpeedupReport({ archive }: { archive: any }) {
                         </td>
                         <td>
                           <span className={`badge ${tone(item.kind)}`}>
+                            <i />
                             {item.kind}
                           </span>
                         </td>

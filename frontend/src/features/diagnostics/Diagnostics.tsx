@@ -23,13 +23,13 @@ import { PaginatedList } from "../../components/PaginatedList";
 import { Badge } from "../../components/Status";
 import { distribution, historyDistribution, pipelineOutcomes } from "./metrics";
 
-const tooltip = {
-  background: "var(--surface)",
-  border: "1px solid var(--border)",
-  borderRadius: 8,
-  color: "var(--text)",
-};
-const tick = { fill: "var(--chart-tick)", fontSize: 11 };
+import {
+  activeDot,
+  axisProps,
+  barCursor,
+  chartTooltip,
+  gridProps,
+} from "../../components/chartTheme";
 
 export function SupportOverview({
   snapshot,
@@ -196,7 +196,11 @@ export function ResourceDiagnostics({
         ].map(({ name, stats, hint }) => (
           <div key={name}>
             <span>{name} average</span>
-            <strong>{pct(stats.mean)}</strong>
+            <strong
+              className={stats.mean == null ? "value-missing" : undefined}
+            >
+              {pct(stats.mean)}
+            </strong>
             <p>
               Peak {pct(stats.peak)}{" "}
               <span>
@@ -229,10 +233,10 @@ export function ResourceDiagnostics({
                   data={history}
                   margin={{ top: 12, right: 20, left: 0, bottom: 0 }}
                 >
-                  <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+                  <CartesianGrid {...gridProps} vertical={false} />
                   <XAxis
                     dataKey="ts"
-                    tick={tick}
+                    {...axisProps}
                     minTickGap={60}
                     tickFormatter={(value) =>
                       new Date(value * 1000).toLocaleTimeString([], {
@@ -243,12 +247,13 @@ export function ResourceDiagnostics({
                   />
                   <YAxis
                     domain={[0, 100]}
-                    tick={tick}
+                    ticks={[0, 25, 50, 75, 100]}
+                    {...axisProps}
                     tickFormatter={(value) => `${value}%`}
-                    width={45}
+                    width={44}
                   />
                   <Tooltip
-                    contentStyle={tooltip}
+                    {...chartTooltip}
                     formatter={(value) => pct(Number(value))}
                     labelFormatter={(value) =>
                       new Date(Number(value) * 1000).toLocaleString()
@@ -263,8 +268,9 @@ export function ResourceDiagnostics({
                     dataKey="io_pressure"
                     name="Storage wait"
                     stroke="var(--series-4)"
-                    strokeWidth={2}
-                    dot={{ r: 3, strokeWidth: 1, fill: "var(--surface)" }}
+                    strokeWidth={1.75}
+                    dot={{ r: 2, strokeWidth: 0, fill: "var(--series-4)" }}
+                    activeDot={activeDot}
                     connectNulls={false}
                     isAnimationActive={false}
                   />
@@ -406,7 +412,9 @@ export function PipelineDiagnostics({
       <div className="diagnostic-metrics">
         <div>
           <span>Success among success / failed</span>
-          <strong>{pct(successRate)}</strong>
+          <strong className={successRate == null ? "value-missing" : undefined}>
+            {pct(successRate)}
+          </strong>
           <p>
             {successful.length} successful / {completed.length} decided
           </p>
@@ -414,13 +422,17 @@ export function PipelineDiagnostics({
         </div>
         <div>
           <span>Successful execution p95</span>
-          <strong>{duration(timing.p95)}</strong>
+          <strong className={timing.p95 == null ? "value-missing" : undefined}>
+            {duration(timing.p95)}
+          </strong>
           <p>{timing.count} measured successful pipelines</p>
           <small>Nearest-rank p95 of this sample, not fleet-wide</small>
         </div>
         <div>
           <span>Job queue wait p95</span>
-          <strong>{duration(waits.p95)}</strong>
+          <strong className={waits.p95 == null ? "value-missing" : undefined}>
+            {duration(waits.p95)}
+          </strong>
           <p>{waits.count} jobs with measured queue time</p>
           <small>Missing queue times are excluded</small>
         </div>
@@ -443,23 +455,15 @@ export function PipelineDiagnostics({
                   layout="vertical"
                   margin={{ left: 5, right: 25 }}
                 >
-                  <CartesianGrid
-                    horizontal={false}
-                    stroke="var(--chart-grid)"
-                  />
-                  <XAxis type="number" allowDecimals={false} tick={tick} />
+                  <CartesianGrid {...gridProps} horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} {...axisProps} />
                   <YAxis
                     type="category"
                     dataKey="name"
                     width={120}
-                    tick={tick}
-                    tickLine={false}
-                    axisLine={false}
+                    {...axisProps}
                   />
-                  <Tooltip
-                    contentStyle={tooltip}
-                    cursor={{ fill: "var(--surface-3)" }}
-                  />
+                  <Tooltip {...chartTooltip} cursor={barCursor} />
                   <Bar
                     dataKey="count"
                     name="Pipelines"
@@ -534,13 +538,10 @@ export function PipelineDiagnostics({
                       }))}
                       margin={{ top: 10, right: 20, left: 0, bottom: 25 }}
                     >
-                      <CartesianGrid
-                        vertical={false}
-                        stroke="var(--chart-grid)"
-                      />
+                      <CartesianGrid {...gridProps} vertical={false} />
                       <XAxis
                         dataKey="label"
-                        tick={tick}
+                        {...axisProps}
                         tickFormatter={(value: string) =>
                           `#${value.split(" #").at(-1)}`
                         }
@@ -548,14 +549,14 @@ export function PipelineDiagnostics({
                         minTickGap={8}
                       />
                       <YAxis
-                        tick={tick}
+                        {...axisProps}
                         tickFormatter={(value) => duration(value)}
-                        width={55}
+                        width={56}
                       />
                       <Tooltip
-                        contentStyle={tooltip}
+                        {...chartTooltip}
                         formatter={(value) => duration(Number(value))}
-                        cursor={{ fill: "var(--surface-3)" }}
+                        cursor={barCursor}
                       />
                       <Bar
                         dataKey="duration"

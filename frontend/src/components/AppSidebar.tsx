@@ -1,4 +1,4 @@
-import { Gauge, LogOut, type LucideIcon } from "lucide-react";
+import { LogOut, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type NavigationGroup = {
@@ -14,6 +14,29 @@ export type NavigationGroup = {
     alert?: boolean;
   }>;
 };
+
+/** OpsDeck mark: a 3x3 slice of the pulse wall, cells shaded by load. */
+const markCells = [0.35, 0.6, 1, 0.6, 1, 0.35, 1, 0.35, 0.6];
+
+export function BrandMark({ size = 18 }: { size?: number }) {
+  return (
+    <span className="brand-mark" aria-hidden="true">
+      <svg width={size} height={size} viewBox="0 0 18 18" fill="currentColor">
+        {markCells.map((opacity, index) => (
+          <rect
+            key={index}
+            x={(index % 3) * 6.5}
+            y={Math.floor(index / 3) * 6.5}
+            width="5"
+            height="5"
+            rx="1.2"
+            opacity={opacity}
+          />
+        ))}
+      </svg>
+    </span>
+  );
+}
 
 export function AppSidebar({
   groups,
@@ -39,8 +62,8 @@ export function AppSidebar({
           onHome();
         }}
       >
-        <Gauge size={28} />
-        <span>OpsDeck</span>
+        <BrandMark />
+        <span className="brand-word">OpsDeck</span>
       </a>
       <div className="workspace-label">{caption}</div>
       <nav aria-label="Main navigation">
@@ -57,11 +80,12 @@ export function AppSidebar({
                   key={item.id}
                   aria-label={item.label}
                   title={item.label}
+                  type="button"
                   aria-current={item.active ? "page" : undefined}
                   className={item.active ? "active" : undefined}
                   onClick={item.onClick}
                 >
-                  <item.icon size={18} />
+                  <item.icon size={18} aria-hidden="true" />
                   <span className="nav-label">{item.label}</span>
                   {item.count !== undefined && (
                     <span
@@ -77,8 +101,8 @@ export function AppSidebar({
       </nav>
       <div className="sidebar-bottom">
         {footer}
-        <button onClick={onSignOut}>
-          <LogOut size={16} />
+        <button type="button" onClick={onSignOut}>
+          <LogOut size={16} aria-hidden="true" />
           Sign out
         </button>
       </div>

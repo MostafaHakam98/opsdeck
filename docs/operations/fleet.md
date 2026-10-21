@@ -135,6 +135,40 @@ The dashboard distinguishes:
 
 An observation becomes stale after `max(45 seconds, 3 × sample interval)`. Each integration also carries its own timestamp; a host's online status does not imply every collector is healthy. Service-file exports retain their existing 120-second freshness allowance. Histories show averaged buckets and retained peaks, with at most about 600 points per requested window. Older snapshots and history are pruned every minute, including inactive/revoked nodes; enrollment metadata and access audit records remain.
 
+## Alerts, maintenance, and monitoring
+
+The fleet overview derives alerts from each host's latest state on every request; they are not stored. Rules:
+
+| Condition | Severity |
+|---|---|
+| Host offline | Critical, "Agent offline" |
+| Host stale | Warning, "Telemetry stale" |
+| CPU or memory at least 90% / 80% | Critical / warning |
+| I/O pressure (`some avg60`) at least 25% / 10% | Critical / warning |
+| A collector reports `degraded` or `unavailable` | Warning, for example "GPU source unavailable" |
+
+Load and collector rules apply only to online hosts, because an offline or stale host's readings are old. Waiting and revoked hosts raise nothing. Alerts are sorted critical first, then by host name. The overview `summary` counts hosts per status, hosts in maintenance, clusters, and alerts, and averages CPU, memory, and GPU over online hosts that report a value.
+
+Put a host into maintenance before planned work. Maintenance silences all of its alerts without hiding the host or its status. Name, cluster, notes (up to 500 characters), and maintenance are changed with `POST /api/fleet/nodes/{id}/settings`; each change is recorded in **Fleet audit** ("Host settings changed", "Maintenance started", "Maintenance ended"). Renaming or moving a host does not change its agent credential.
+
+`GET /api/fleet/metrics` exposes Prometheus gauges for scraping with the operator token or, preferably, a separate scrape-only `OPSDECK_METRICS_TOKEN` that cannot read or change anything else: `opsdeck_node_up`, `opsdeck_node_cpu_percent`, `opsdeck_node_memory_percent`, `opsdeck_node_gpu_percent`, `opsdeck_node_ci_running`, `opsdeck_node_age_seconds`, `opsdeck_node_maintenance`, `opsdeck_fleet_alerts{severity}`, and `opsdeck_build_info{version}`. Missing readings are omitted rather than reported as zero. Set `OPSDECK_VERSION` (or ship a `SOURCE_COMMIT` file) so `/healthz` and `opsdeck_build_info` identify the running build. `make docker-build` stamps the image with the current commit.
+
+```yaml
+scrape_configs:
+  - job_name: opsdeck-fleet
+    scheme: https
+    metrics_path: /api/fleet/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/opsdeck-metrics-token
+    static_configs:
+      - targets: ['opsdeck.example.com']
+```
+
+Fleet capacity history covers up to seven days (`hours` 1..168); a single host's history still covers the full retention window.
+
+The database gains `notes` and `maintenance` columns on first start, with defaults, so the previous release can still read and write it after a rollback. Rolling back drops the notes and maintenance behavior, not the data.
+
 ## Credentials, backup, and limits
 
 Agent credentials can write telemetry and claim/respond to workspace requests for their server-assigned host ID. They cannot read fleet data, enroll nodes, or access another host's requests. Host workspace access additionally requires its private local token and preserves the host's operation permissions. The server stores SHA-256 hashes rather than recoverable agent credentials. Type the host name in **Agent access** to rotate or revoke its credential. Rotation invalidates the previous credential immediately and reconnects the same host identity after updating `.env.agent` and restarting the service.

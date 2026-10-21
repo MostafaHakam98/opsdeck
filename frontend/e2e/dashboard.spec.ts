@@ -598,7 +598,9 @@ test("operator capacity and local archive workflows require reviewed confirmatio
   ).toBeDisabled();
   await page.getByLabel("Operation confirmation").fill("set workers 12");
   await page.getByRole("button", { name: "Apply reviewed operation" }).click();
-  await expect(page.getByRole("status")).toContainText("Worker limits saved");
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
+    "Worker limits saved",
+  );
   await page.getByLabel("Saved image archive", { exact: true }).setInputFiles({
     name: "usb-image.tar",
     mimeType: "application/x-tar",
@@ -855,7 +857,7 @@ test("real API captures, compares and exports manual survey checkpoints", async 
   await page
     .getByRole("button", { name: "Save current checkpoint", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
     `Checkpoint saved: Before ${suffix}`,
   );
   await page
@@ -864,7 +866,7 @@ test("real API captures, compares and exports manual survey checkpoints", async 
   await page
     .getByRole("button", { name: "Save current checkpoint", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
     `Checkpoint saved: After ${suffix}`,
   );
   const before = await page
@@ -992,6 +994,12 @@ test("fleet retains the complete host sidebar and scopes every original page to 
     if (url.pathname === "/api/fleet" || url.pathname === "/api/snapshot") {
       return route.fulfill({ json: { nodes, retention_days: 30 } });
     }
+    if (url.pathname === "/api/fleet/pulse")
+      return route.fulfill({
+        json: { start: 0, end: 0, bucket_seconds: 60, nodes: {} },
+      });
+    if (url.pathname === "/api/fleet/history")
+      return route.fulfill({ json: [] });
     const node = nodes.find((node) =>
       url.pathname.startsWith(`/api/fleet/nodes/${node.id}`),
     );
@@ -1078,7 +1086,7 @@ test("fleet retains the complete host sidebar and scopes every original page to 
   ).toBeVisible();
   await picker.selectOption("");
   await expect(
-    page.getByRole("heading", { name: "Your runner fleet", exact: true }),
+    page.getByRole("heading", { name: "Runner fleet", exact: true }),
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await picker.selectOption(nodes[0].id);
