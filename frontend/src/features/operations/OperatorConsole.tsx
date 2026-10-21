@@ -1,3 +1,4 @@
+import { useHostApi } from "../../lib/HostApi";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRight,
@@ -6,7 +7,7 @@ import {
   SlidersHorizontal,
   UploadCloud,
 } from "lucide-react";
-import { api, bytes, uploadArchive, type Upload } from "../../lib/api";
+import { bytes, type Upload } from "../../lib/api";
 import { Pager } from "../../components/Pager";
 import { tone } from "../../components/Status";
 
@@ -70,6 +71,7 @@ export function OperatorConsole({
   images: any[];
   onChanged: () => void;
 }) {
+  const { api, uploadArchive } = useHostApi();
   const [cap, setCap] = useState<Capabilities>();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState("");

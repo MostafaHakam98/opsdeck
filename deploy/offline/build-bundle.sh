@@ -14,6 +14,6 @@ cp -a backend deploy scripts "$BUNDLE_DIR/"
 mkdir -p "$BUNDLE_DIR/frontend"
 cp -a frontend/dist "$BUNDLE_DIR/frontend/"
 cp -a docs "$BUNDLE_DIR/"
-cp .env.example README.md Makefile .dockerignore "$BUNDLE_DIR/"
-tar --exclude=__pycache__ -czf dist/opsdeck-linux-x86_64-py312.tar.gz -C "$BUNDLE_DIR" backend frontend deploy scripts docs wheels .env.example README.md Makefile .dockerignore
+cp .env.example .env.agent.example README.md Makefile .dockerignore "$BUNDLE_DIR/"
+tar --exclude=__pycache__ -czf dist/opsdeck-linux-x86_64-py312.tar.gz -C "$BUNDLE_DIR" backend frontend deploy scripts docs wheels .env.example .env.agent.example README.md Makefile .dockerignore
 sha256sum dist/opsdeck-linux-x86_64-py312.tar.gz

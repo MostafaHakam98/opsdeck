@@ -1,6 +1,10 @@
 # OpsDeck
 
-A single-node infrastructure dashboard for Linux hosts, Docker, GitLab runners, and NVIDIA GPUs. React frontend, FastAPI backend, persistent SQLite history, and an audited container-action workflow.
+An infrastructure dashboard for Linux hosts, Docker, GitLab runners, and NVIDIA GPUs. Run a central fleet server with outbound runner agents, or monitor a single host locally. React frontend, FastAPI backend, persistent SQLite history, and an audited standalone container-action workflow.
+
+## Central fleet on AWS
+
+Run `make init`, set `OPSDECK_DOMAIN` in `.env`, then run `make central-https-up` on the server. Enroll each host in the dashboard and install its outbound agent with `make agent-install` or `make docker-agent-up`. See [Fleet deployment](docs/operations/fleet.md) for HTTPS, runner installation, connectivity, credentials, and outage handling.
 
 ## Start on a Linux node
 
@@ -52,7 +56,7 @@ make docker-backup         # Container SQLite backup
 make bundle                # Offline Linux x86_64 / Python 3.12 archive
 ```
 
-One application instance monitors one node. History lives in a persistent named volume under Compose, or in the configured database path natively. Source visibility does not grant access to a running node's dashboard.
+Standalone mode monitors one node. Central mode stores and displays observations from enrolled hosts across multiple networks. History lives in a persistent named volume under Compose, or in the configured database path natively. Source visibility does not grant access to a running dashboard.
 
 ## Handbook
 
@@ -66,6 +70,7 @@ Application code lives in `backend/` and `frontend/`; deployment assets are grou
 | [Runner surveys](docs/operations/surveys.md) | Private benchmark imports, recorded evidence, and current optimization checks |
 | [Live surveys](docs/operations/live-surveys.md) | Global filters, project/image attribution, checkpoints, and optional GitLab setup |
 | [Deployment](docs/operations/deployment.md) | Docker, Compose, GPU, native, offline, and cluster guidance |
+| [Fleet deployment](docs/operations/fleet.md) | AWS server, outbound agents, cluster views, and credentials |
 | [Operations](docs/operations/maintenance.md) | Health, logs, backup/restore, updates, and optimization |
 | [Architecture](docs/architecture/overview.md) | Data flow, API, permissions, and limits |
 | [Troubleshooting](docs/guides/troubleshooting.md) | Diagnose startup and missing telemetry |
@@ -76,6 +81,6 @@ Application code lives in `backend/` and `frontend/`; deployment assets are grou
 
 Host Compose explicitly reads the Linux node's root/procfs and shares its PID/network namespaces. Docker socket access is powerful even when its filesystem mount is read-only. The app runs without privileged mode, as a non-root user, with bounded resources and a read-only application filesystem. See the deployment guide before granting node access.
 
-Portable containers do not provide complete node visibility. Fleet aggregation, Kubernetes API metrics, centralized log search, distributed tracing, SMART health, custom threshold editing, and notification delivery are not implemented. Integration credentials remain server-side; application access uses one operator token rather than individual accounts.
+Portable containers do not provide complete node visibility. Fleet mode supports outbound telemetry, host history, cluster views, and optional access to the original host workspace through an outbound API relay. Host-side controls retain their original permissions and confirmation workflow. Kubernetes API metrics, centralized log search, distributed tracing, SMART health, custom threshold editing, and notification delivery are not implemented. Integration credentials remain server-side; application access uses one operator token rather than individual accounts.
 
 GitHub Actions runs backend, frontend, browser, and container checks. It does not deploy or alter a shared runner automatically.

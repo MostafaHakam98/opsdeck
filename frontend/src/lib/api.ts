@@ -7,6 +7,7 @@ export type Source<T = any> = {
   stale: boolean;
 };
 export type Snapshot = {
+  fleet_url?: string | null;
   sources: Record<string, Source>;
   alerts: Array<{
     key: string;
@@ -129,12 +130,13 @@ export function uploadArchive(
   kind: string,
   progress: (percent: number) => void,
   signal: AbortSignal,
+  prefix = "",
 ): Promise<Upload> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open(
       "POST",
-      `/api/operations/uploads?kind=${kind}&name=${encodeURIComponent(file.name.slice(0, 120))}`,
+      `/api/${prefix}operations/uploads?kind=${kind}&name=${encodeURIComponent(file.name.slice(0, 120))}`,
     );
     request.setRequestHeader("Authorization", `Bearer ${token}`);
     request.setRequestHeader("Content-Type", "application/octet-stream");

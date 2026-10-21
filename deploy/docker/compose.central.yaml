@@ -1,0 +1,40 @@
+# Central mode has application storage only; do not combine with host/GPU overrides.
+services:
+  opsdeck:
+    environment:
+      OPSDECK_MODE: central
+      OPSDECK_ACTIONS: 'false'
+      OPSDECK_OPERATIONS: 'false'
+  proxy:
+    image: caddy:2-alpine
+    profiles: [https]
+    environment:
+      OPSDECK_DOMAIN: '${OPSDECK_DOMAIN:-localhost}'
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - opsdeck_tls:/data
+      - opsdeck_proxy_config:/config
+    depends_on:
+      opsdeck:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+volumes:
+  opsdeck_tls:
+  opsdeck_proxy_config:

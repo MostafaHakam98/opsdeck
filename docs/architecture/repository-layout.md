@@ -10,7 +10,7 @@ opsdeck/
 │   │   ├── app/                # Browser entry point and application styling
 │   │   ├── features/runners/   # Runner inventory and survey views
 │   │   ├── features/operations/ # Operator controls and searchable audit history
-│   │   ├── components/        # Shared table controls
+│   │   ├── components/        # Shared sidebar, theme, host selector, and table controls
 │   │   └── lib/                # API client, formatters, and their unit tests
 │   └── e2e/                    # Browser tests
 ├── deploy/
@@ -38,7 +38,7 @@ opsdeck/
 ## Boundaries
 
 - `backend` contains the long-running application. Keep operator-only runner mutations in `scripts/runner`, separate from collectors and browser actions.
-- `frontend/src/app` owns application wiring. Runner-specific presentation belongs in `features/runners`; reusable client helpers belong in `lib`.
+- `frontend/src/app` owns deployment selection, the sign-in screen, the page registry, and workspace wiring. `AppSidebar` is shared by fleet and host views; its navigation owns scrolling while branding and the footer stay fixed. Fleet request polling lives in `features/fleet/useFleetData.ts`. Host workspaces and charts load on demand; `WorkspaceBoundary` provides a reload action if a page chunk cannot load. Runner-specific presentation belongs in `features/runners`; reusable client helpers belong in `lib`.
 - Python deployment modules keep their existing `deploy.*` entry points, including `deploy.export_services`, so scheduled service exporters continue working after source updates.
 - Tests mirror application and operational responsibilities. Frontend unit tests remain next to their helpers; browser tests live in `frontend/e2e`.
 - Credentials, survey evidence, databases, generated builds, and scratch work stay in ignored runtime directories. Docker builds exclude them.

@@ -9,6 +9,46 @@ async function signIn(page: any) {
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
 }
+test("local header opens the fleet without carrying the local access token", async ({
+  page,
+  request,
+}) => {
+  const snapshot = await (
+    await request.get("/api/snapshot", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json();
+  await page.route("**/api/snapshot", (route) =>
+    route.fulfill({
+      json: { ...snapshot, fleet_url: "https://fleet.example.com" },
+    }),
+  );
+  let leakedToken = false;
+  await page.route("https://fleet.example.com/**", async (route) => {
+    leakedToken ||=
+      !!route.request().headers().authorization ||
+      route.request().url().includes(token);
+    await route.fulfill({
+      contentType: "text/html",
+      body: "<h1>Fleet dashboard</h1>",
+    });
+  });
+  await signIn(page);
+  const picker = page.getByRole("combobox", { name: "Switch host" });
+  await expect(picker).toHaveValue("local");
+  await expect(
+    picker.getByRole("option", { name: "All hosts (open fleet)", exact: true }),
+  ).toBeEnabled();
+  await picker.selectOption("");
+  await expect(
+    page.getByRole("heading", { name: "Fleet dashboard" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => sessionStorage.getItem("opsdeck.token")),
+  ).toBeNull();
+  expect(leakedToken).toBe(false);
+});
+
 test("real API authentication, hardware, all pages, and unavailable integrations", async ({
   page,
   request,
@@ -35,7 +75,7 @@ test("real API authentication, hardware, all pages, and unavailable integrations
     ).toBeVisible();
   }
   await expect(
-    page.getByText("not configured", { exact: false }).first(),
+    page.getByText("not configured", { exact: true }).first(),
   ).toBeVisible();
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await page.screenshot({
@@ -922,4 +962,312 @@ test("theme choice applies dark tokens, persists, and returns to system", async 
   expect(await background()).toBe(light);
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await background()).not.toBe(light);
+});
+
+test("fleet retains the complete host sidebar and scopes every original page to the selected host", async ({
+  page,
+  request,
+}) => {
+  const auth = { Authorization: `Bearer ${token}` };
+  const snapshot = await (
+    await request.get("/api/snapshot", { headers: auth })
+  ).json();
+  const nodes = ["a", "b"].map((id) => ({
+    id: `workspace-${id}`,
+    name: `runner-${id}`,
+    cluster: `cluster-${id}`,
+    hostname: `host-${id}`,
+    status: "online",
+    metrics: {},
+    source_status: {},
+  }));
+  const seen: string[] = [];
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/healthz", (route) =>
+    route.fulfill({ json: { status: "ok", mode: "central" } }),
+  );
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/fleet" || url.pathname === "/api/snapshot") {
+      return route.fulfill({ json: { nodes, retention_days: 30 } });
+    }
+    const node = nodes.find((node) =>
+      url.pathname.startsWith(`/api/fleet/nodes/${node.id}`),
+    );
+    if (node && url.pathname.includes("/workspace/")) {
+      seen.push(url.pathname);
+      const path = url.pathname.split("/workspace/")[1];
+      if (path === "snapshot") {
+        const copy = structuredClone(snapshot);
+        if (copy.sources.host.data)
+          copy.sources.host.data.hostname = node.hostname;
+        return route.fulfill({ json: copy });
+      }
+      const response = await request.get(`/api/${path}${url.search}`, {
+        headers: auth,
+      });
+      return route.fulfill({ response });
+    }
+    if (node)
+      return route.fulfill({
+        json: url.pathname.endsWith("/history")
+          ? []
+          : { node, sources: snapshot.sources, workspace_connected: true },
+      });
+    throw new Error(`Unexpected unscoped API request: ${url.pathname}`);
+  });
+  await page.goto("/");
+  await page.getByLabel("Access token", { exact: true }).fill(token);
+  await page.getByRole("button", { name: "Connect to OpsDeck" }).click();
+  const sections = [
+    "Overview",
+    "Host & hardware",
+    "Docker",
+    "Runner stack",
+    "Projects & pipelines",
+    "Survey & benchmarks",
+    "Optimization",
+    "Operations",
+    "Activity & audit",
+    "Connections",
+  ];
+  for (const name of sections)
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Docker", exact: true }).click();
+  await expect(page.getByText("Select a host to open Docker.")).toBeVisible();
+  const picker = page.getByRole("combobox", { name: "Switch host" });
+  await picker.selectOption(nodes[0].id);
+  await expect(
+    page.getByRole("heading", { name: "Docker", exact: true }),
+  ).toBeVisible();
+  for (const name of sections) {
+    await page.getByRole("button", { name, exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+  }
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Connections", exact: true }),
+  ).toBeVisible();
+  await picker.selectOption(nodes[1].id);
+  await expect(
+    page.getByRole("heading", { name: "Connections", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".host-chip")).toContainText(nodes[1].hostname);
+  expect(
+    seen.some((path) =>
+      path.includes(`${nodes[0].id}/workspace/operations/capabilities`),
+    ),
+  ).toBe(true);
+  expect(
+    seen.some((path) => path.includes(`${nodes[1].id}/workspace/snapshot`)),
+  ).toBe(true);
+  await page.goto(`/?node=${nodes[1].id}&section=invalid-section`);
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("CPU utilization", { exact: true }).first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Agent access", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Agent access", exact: true }),
+  ).toBeVisible();
+  await picker.selectOption("");
+  await expect(
+    page.getByRole("heading", { name: "Your runner fleet", exact: true }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await picker.selectOption(nodes[0].id);
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "../.tmp/fleet-sidebar-mobile.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole("radio", { name: "Dark theme" }).click();
+  await page.screenshot({
+    path: "../.tmp/fleet-sidebar-desktop.png",
+    fullPage: true,
+  });
+  expect(errors).toEqual([]);
+});
+
+test("GitLab setup waits for saved settings before allowing edits", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const loaded = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let requested = false;
+  let saves = 0;
+  let reads = 0;
+  await page.route("**/api/integrations/gitlab", async (route) => {
+    if (route.request().method() === "GET") {
+      requested = true;
+      if (++reads === 1) {
+        await loaded;
+        await route.fulfill({
+          status: 503,
+          json: { detail: "Temporary settings failure" },
+        });
+        return;
+      }
+      await route.fulfill({
+        json: {
+          enabled: false,
+          url: "",
+          token_configured: false,
+          projects: [],
+          auto_observed: true,
+          project_limit: 32,
+        },
+      });
+    } else {
+      saves++;
+      const values = route.request().postDataJSON();
+      expect(values.url).toBe("https://gitlab.example.com");
+      expect(values.projects).toEqual(["team/alpha"]);
+      await route.fulfill({
+        json: {
+          enabled: true,
+          url: values.url,
+          token_configured: true,
+          projects: values.projects,
+          auto_observed: true,
+          project_limit: 32,
+        },
+      });
+    }
+  });
+  try {
+    await signIn(page);
+    await page
+      .getByRole("button", { name: "Connections", exact: true })
+      .click();
+    await expect.poll(() => requested).toBe(true);
+    await expect(page.getByLabel("GitLab URL", { exact: true })).toBeDisabled();
+    release();
+    await expect(page.getByText("Temporary settings failure")).toBeVisible();
+    await page
+      .getByRole("button", { name: "Retry loading GitLab settings" })
+      .click();
+    await page
+      .getByLabel("GitLab URL", { exact: true })
+      .fill("https://gitlab.example.com");
+    await page
+      .getByLabel("GitLab read-only token")
+      .fill("fake-regression-read-only-token");
+    await page.getByLabel("GitLab project scope").fill("team/alpha");
+    await page
+      .getByRole("button", { name: "Save and validate read-only connection" })
+      .click();
+    await expect(page.getByText(/Read-only connection saved/)).toBeVisible();
+    await expect(page.getByLabel("GitLab URL", { exact: true })).toHaveValue(
+      "https://gitlab.example.com",
+    );
+    await expect(page.getByLabel("GitLab read-only token")).toHaveValue("");
+    expect(saves).toBe(1);
+  } finally {
+    release();
+  }
+});
+
+test("all-hosts navigation keeps clusters and footer reachable without nested clipping", async ({
+  page,
+}) => {
+  const downloaded: string[] = [];
+  page.on("request", (request) =>
+    downloaded.push(new URL(request.url()).pathname),
+  );
+  const nodes = Array.from({ length: 24 }, (_, index) => ({
+    id: `layout-${index}`,
+    name: `runner-${index}`,
+    hostname: `host-${index}`,
+    cluster: `network-${String(index).padStart(2, "0")}`,
+    status: "online",
+    metrics: {},
+    source_status: {},
+  }));
+  await page.route("**/healthz", (route) =>
+    route.fulfill({ json: { status: "ok", mode: "central" } }),
+  );
+  await page.route("**/api/**", (route) =>
+    route.fulfill({ json: { nodes, retention_days: 30 } }),
+  );
+  await page.goto("/");
+  await page.getByLabel("Access token", { exact: true }).fill(token);
+  await page.getByRole("button", { name: "Connect to OpsDeck" }).click();
+  await expect(
+    page
+      .getByRole("combobox", { name: "Switch host" })
+      .getByRole("option", { name: /runner-23/ }),
+  ).toHaveCount(1);
+  expect(
+    downloaded.filter((path) =>
+      /\/(HostWorkspace-|NodeDetail-|charts-)/.test(path),
+    ),
+  ).toEqual([]);
+  const sidebar = page.getByRole("complementary");
+  for (const height of [960, 768, 600]) {
+    await page.setViewportSize({ width: 1853, height });
+    await expect
+      .poll(() =>
+        sidebar.evaluate(
+          (element) => element.scrollHeight <= element.clientHeight + 1,
+        ),
+      )
+      .toBe(true);
+    const signOut = sidebar.getByRole("button", {
+      name: "Sign out",
+      exact: true,
+    });
+    const footerBox = await signOut.boundingBox();
+    expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(height);
+    const cluster = sidebar.getByRole("button", { name: /network-23/ });
+    await cluster.scrollIntoViewIfNeeded();
+    const box = await cluster.boundingBox();
+    expect(box!.height).toBeGreaterThan(30);
+    expect(box!.y + box!.height).toBeLessThan(footerBox!.y);
+    await sidebar
+      .getByRole("button", { name: "Connections", exact: true })
+      .scrollIntoViewIfNeeded();
+  }
+  await page.setViewportSize({ width: 1853, height: 960 });
+  await page.getByRole("radio", { name: "Dark theme" }).click();
+  await page.screenshot({ path: "../.tmp/all-hosts-layout-desktop.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: "../.tmp/all-hosts-layout-mobile.png" });
+});
+
+test("a failed workspace chunk offers a reload instead of a blank page", async ({
+  page,
+}) => {
+  const chunk = "**/assets/HostWorkspace-*.js";
+  await page.route(chunk, (route) => route.abort());
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Workspace could not load" }),
+  ).toBeVisible();
+  await page.unroute(chunk);
+  await page.getByRole("button", { name: "Reload workspace" }).click();
+  await expect(
+    page.getByRole("button", { name: "Connect to OpsDeck" }),
+  ).toBeVisible();
 });

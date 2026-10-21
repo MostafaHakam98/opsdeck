@@ -69,6 +69,9 @@ class GitLabHistoryRequest(BaseModel):
 def create_app(settings=None, collect=True, action_factory=None, operation_factory=None, runner_client=None):
     settings = settings or Settings()
     settings.validate()
+    if settings.mode == "central":
+        from backend.fleet import create_fleet_app
+        return create_fleet_app(settings)
     store = Store(settings.db)
     state = {name: {"status": "collecting", "data": None, "updated_at": None, "message": "Waiting for the first sample"} for name in ("host", "docker", "gpu", "runner", "gitlab", "services", "findings")}
     active_alerts = set()
@@ -218,7 +221,8 @@ def create_app(settings=None, collect=True, action_factory=None, operation_facto
             sources["docker"]["data"] = {**sources["docker"]["data"], "worker_history": store.workers()}
         return {"sources": sources, "alerts": alerts, "recommendations": recommendations,
             "server_time": now, "sample_seconds": settings.interval, "retention_days": settings.retention,
-            "actions_enabled": settings.actions, "history_error": app.state.history_error, "version": "0.1.0"}
+            "actions_enabled": settings.actions, "history_error": app.state.history_error, "version": "0.1.0",
+            "fleet_url": settings.fleet_url or None}
 
     @app.get("/api/history", dependencies=[Depends(authenticate)])
     def history(hours: int = Query(default=1, ge=1, le=720)):

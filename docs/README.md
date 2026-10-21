@@ -9,6 +9,7 @@ Start with [Getting started](guides/getting-started.md), then use the guides bel
 | [Node access](guides/node-access.md) | Open a running deployment, retrieve its token, tunnel over SSH, and find the speedup report |
 | [Configuration](guides/configuration.md) | Every environment setting, integration setup, and collection scope |
 | [Deployment](operations/deployment.md) | Docker, Compose, NVIDIA, native services, offline installation, and cluster considerations |
+| [Fleet deployment](operations/fleet.md) | Central AWS dashboard and outbound runner agents across networks |
 | [Operations](operations/maintenance.md) | Health, logs, backup/restore, updates, retention, and optimization workflow |
 | [Architecture](architecture/overview.md) | Data flow, access boundaries, API routes, and current limits |
 | [Troubleshooting](guides/troubleshooting.md) | Diagnose missing metrics, startup failures, port conflicts, and database issues |
@@ -17,6 +18,6 @@ Start with [Getting started](guides/getting-started.md), then use the guides bel
 | [Live surveys and project dashboards](operations/live-surveys.md) | Global/project/pipeline/image scopes, optional GitLab results, retained checkpoints and comparisons |
 | [Operator actions](operations/operator-actions.md) | Change worker limits, load USB/image archives, build and tag local images, and filter inventories |
 
-OpsDeck monitors one node per application instance. It does not aggregate an entire Kubernetes or HPC cluster into one dashboard.
+Standalone mode monitors one node per application instance. Central mode aggregates enrolled host agents across networks. Cluster-wide Kubernetes API collection is separate and is not implemented.
 
 For contributors, start with [Repository layout](architecture/repository-layout.md) and [Architecture](architecture/overview.md).

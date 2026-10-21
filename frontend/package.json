@@ -7,7 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "test": "vitest run src",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test && playwright test --config fleet.playwright.config.ts",
+    "test:fleet": "playwright test --config fleet.playwright.config.ts"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
