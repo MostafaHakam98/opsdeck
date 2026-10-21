@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import {
   Activity,
   ArrowLeft,
   ChevronRight,
-  Gauge,
   LogOut,
   Network,
   Plus,
@@ -12,17 +11,27 @@ import {
   Server,
   ShieldCheck,
 } from "lucide-react";
-import { api, pct, type Event } from "../../lib/api";
+import { api, pct } from "../../lib/api";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { HostSwitcher } from "../../components/HostSwitcher";
 import { age } from "./format";
 import { Status, Table, Section } from "./FleetComponents";
 import { AgentCredential } from "./AgentCredential";
-import { NodeDetail } from "./NodeDetail";
-import type { Fleet, Detail, Credential, Point } from "./types";
+import type { Credential } from "./types";
 import "./fleet.css";
-import { HostWorkspace, hostPages } from "../../app/HostWorkspace";
+import { hostPages, hostPageGroups, hostPageId } from "../../app/navigation";
+import { AppSidebar } from "../../components/AppSidebar";
 import { HostApiProvider } from "../../lib/HostApi";
+import { useFleetData } from "./useFleetData";
+
+const HostWorkspace = lazy(() =>
+  import("../../app/HostWorkspace").then((module) => ({
+    default: module.HostWorkspace,
+  })),
+);
+const NodeDetail = lazy(() =>
+  import("./NodeDetail").then((module) => ({ default: module.NodeDetail })),
+);
 
 export function FleetApp({
   signIn,
@@ -32,112 +41,52 @@ export function FleetApp({
   const [token, setToken] = useState(
     () => sessionStorage.getItem("opsdeck.token") || "",
   );
-  const [fleet, setFleet] = useState<Fleet | null>(null);
-  const [detail, setDetail] = useState<Detail | null>(null);
-  const [history, setHistory] = useState<Point[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
   const [cluster, setCluster] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState(
     () => new URLSearchParams(window.location.search).get("node") || "",
   );
-  const [section, setSection] = useState(
-    () =>
-      new URLSearchParams(window.location.search).get("section") || "overview",
+  const [section, setSection] = useState(() =>
+    hostPageId(
+      new URLSearchParams(window.location.search).get("section") || undefined,
+    ),
   );
   const [workspaceRequested, setWorkspaceRequested] = useState(false);
   const [view, setView] = useState("fleet");
   const [hours, setHours] = useState(1);
   const [refresh, setRefresh] = useState(0);
-  const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState(false);
   const [credential, setCredential] = useState<Credential | null>(null);
   const [name, setName] = useState("");
   const [newCluster, setNewCluster] = useState("");
   const [confirm, setConfirm] = useState("");
+  const { fleet, detail, history, events, error, clearHost, clearHistory } =
+    useFleetData(token, selected, hours, refresh, view);
   useEffect(() => {
     function restoreHost() {
       setSelected(
         new URLSearchParams(window.location.search).get("node") || "",
       );
       setSection(
-        new URLSearchParams(window.location.search).get("section") ||
-          "overview",
+        hostPageId(
+          new URLSearchParams(window.location.search).get("section") ||
+            undefined,
+        ),
       );
       setWorkspaceRequested(
         new URLSearchParams(window.location.search).has("section"),
       );
       setView("fleet");
       setCluster("");
-      setDetail(null);
-      setHistory([]);
+      clearHost();
       setConfirm("");
       setActionError("");
     }
     window.addEventListener("popstate", restoreHost);
     return () => window.removeEventListener("popstate", restoreHost);
   }, []);
-  useEffect(() => {
-    if (!token) return;
-    const controller = new AbortController();
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    async function load() {
-      try {
-        const data = await api<Fleet>(
-          "fleet",
-          token,
-          undefined,
-          controller.signal,
-        );
-        if (active) {
-          setFleet(data);
-          setError("");
-        }
-        if (selected) {
-          const [node, points] = await Promise.all([
-            api<Detail>(
-              `fleet/nodes/${selected}`,
-              token,
-              undefined,
-              controller.signal,
-            ),
-            api<Point[]>(
-              `fleet/nodes/${selected}/history?hours=${hours}`,
-              token,
-              undefined,
-              controller.signal,
-            ),
-          ]);
-          if (active) {
-            setDetail(node);
-            setHistory(points);
-          }
-        }
-        if (view === "audit") {
-          const rows = await api<Event[]>(
-            "events",
-            token,
-            undefined,
-            controller.signal,
-          );
-          if (active) setEvents(rows);
-        }
-      } catch (err) {
-        if (active) setError((err as Error).message);
-      } finally {
-        if (active) timer = setTimeout(load, 10000);
-      }
-    }
-    void load();
-    return () => {
-      active = false;
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [token, selected, hours, refresh, view]);
   function rememberHost(id: string) {
     const url = new URL(window.location.href);
     if (
@@ -157,8 +106,7 @@ export function FleetApp({
     setWorkspaceRequested(false);
     setView(next);
     setSelected("");
-    setDetail(null);
-    setHistory([]);
+    clearHost();
     setCluster(nextCluster);
     setActionError("");
     setConfirm("");
@@ -166,12 +114,13 @@ export function FleetApp({
   function selectNode(id: string) {
     rememberHost(id);
     setSection(
-      new URLSearchParams(window.location.search).get("section") || "overview",
+      hostPageId(
+        new URLSearchParams(window.location.search).get("section") || undefined,
+      ),
     );
     setView("fleet");
     setSelected(id);
-    setDetail(null);
-    setHistory([]);
+    clearHost();
     setConfirm("");
     setActionError("");
     setRefresh((value) => value + 1);
@@ -195,10 +144,7 @@ export function FleetApp({
   function signOut() {
     sessionStorage.removeItem("opsdeck.token");
     setToken("");
-    setFleet(null);
     setCredential(null);
-    setDetail(null);
-    setEvents([]);
   }
   async function mutate(path: string, values: unknown, reveal: boolean) {
     setBusy(true);
@@ -239,96 +185,101 @@ export function FleetApp({
   ) {
     return (
       <HostApiProvider prefix={`fleet/nodes/${selected}/workspace/`}>
-        <HostWorkspace
-          key={selected}
-          fleet={{
-            hosts: nodes,
-            selected,
-            initialPage: section,
-            onHost: switchHost,
-            onFleet: () => navigate("fleet", ""),
-            onEnroll: () => navigate("enroll"),
-            onAgent: () => setView("agent"),
-            onSignOut: signOut,
-          }}
-        />
+        <Suspense
+          fallback={
+            <main className="login">
+              <p>Opening host workspace…</p>
+            </main>
+          }
+        >
+          <HostWorkspace
+            key={selected}
+            fleet={{
+              hosts: nodes,
+              selected,
+              initialPage: section,
+              onHost: switchHost,
+              onFleet: () => navigate("fleet", ""),
+              onEnroll: () => navigate("enroll"),
+              onAgent: () => setView("agent"),
+              onSignOut: signOut,
+            }}
+          />
+        </Suspense>
       </HostApiProvider>
     );
   }
   return (
-    <div className="fleet-shell">
-      <aside className="fleet-sidebar">
-        <div className="fleet-brand">
-          <Gauge size={29} />
-          <strong>OpsDeck</strong>
-        </div>
-        <p className="fleet-sidebar-caption">Runner fleet</p>
-        <button
-          className={view === "fleet" && !cluster ? "active" : ""}
-          onClick={() => navigate("fleet", "")}
-        >
-          <Network size={18} />
-          All clusters<span>{nodes.length}</span>
-        </button>
-        <div className="fleet-clusters">
-          {clusters.map((c) => (
-            <button
-              key={c}
-              className={cluster === c && view === "fleet" ? "active" : ""}
-              onClick={() => navigate("fleet", c)}
-            >
-              <Server size={16} />
-              {c}
-              <span>{nodes.filter((n) => n.cluster === c).length}</span>
-            </button>
-          ))}
-        </div>
-        <nav aria-label="Host workspace navigation">
-          {[...new Set(hostPages.map((p) => p.group))].map((group) => (
-            <div className="fleet-host-nav" key={group}>
-              <span>{group}</span>
-              {hostPages
-                .filter((p) => p.group === group)
-                .map((p) => (
-                  <button
-                    key={p.id}
-                    aria-label={p.title}
-                    onClick={() => openSection(p.id)}
-                  >
-                    <p.icon size={17} />
-                    {p.title}
-                  </button>
-                ))}
-            </div>
-          ))}
-        </nav>
-        <button
-          className={view === "enroll" ? "active" : ""}
-          onClick={() => navigate("enroll")}
-        >
-          <Plus size={18} />
-          Enroll host
-        </button>
-        <button
-          className={view === "audit" ? "active" : ""}
-          onClick={() => navigate("audit")}
-        >
-          <Activity size={18} />
-          Fleet audit
-        </button>
-        <div className="fleet-sidebar-bottom">
-          <p>
-            <ShieldCheck size={16} />
-            Monitoring enabled
-          </p>
-          <small>History retained for {fleet?.retention_days ?? 30} days</small>
-          <button onClick={signOut}>
-            <LogOut size={16} />
-            Sign out
-          </button>
-        </div>
-      </aside>
-      <div className="fleet-body">
+    <div className="workspace">
+      <AppSidebar
+        caption="Runner fleet"
+        onHome={() => navigate("fleet", "")}
+        onSignOut={signOut}
+        footer={
+          <div className="sidebar-status">
+            <p>
+              <ShieldCheck size={16} />
+              Monitoring enabled
+            </p>
+            <small>
+              History retained for {fleet?.retention_days ?? 30} days
+            </small>
+          </div>
+        }
+        groups={[
+          {
+            label: "Fleet",
+            items: [
+              {
+                id: "fleet",
+                label: "All clusters",
+                icon: Network,
+                active: view === "fleet" && !selected && !cluster,
+                count: nodes.length,
+                onClick: () => navigate("fleet", ""),
+              },
+              {
+                id: "enroll",
+                label: "Enroll host",
+                icon: Plus,
+                active: view === "enroll",
+                onClick: () => navigate("enroll"),
+              },
+              {
+                id: "audit",
+                label: "Fleet audit",
+                icon: Activity,
+                active: view === "audit",
+                onClick: () => navigate("audit"),
+              },
+            ],
+          },
+          {
+            label: "Clusters",
+            mobileHidden: true,
+            items: clusters.map((c) => ({
+              id: c,
+              label: c,
+              icon: Server,
+              active: cluster === c && view === "fleet",
+              count: nodes.filter((n) => n.cluster === c).length,
+              onClick: () => navigate("fleet", c),
+            })),
+          },
+          ...hostPageGroups.map((group) => ({
+            label: group,
+            items: hostPages
+              .filter((p) => p.group === group)
+              .map((p) => ({
+                id: p.id,
+                label: p.title,
+                icon: p.icon,
+                onClick: () => openSection(p.id),
+              })),
+          })),
+        ]}
+      />
+      <div className="main fleet-body">
         <header className="fleet-topbar">
           <HostSwitcher
             hosts={nodes}
@@ -511,16 +462,22 @@ export function FleetApp({
                 Back to hosts
               </button>
               {detail ? (
-                <NodeDetail
-                  key={selected}
-                  detail={detail}
-                  history={history}
-                  hours={hours}
-                  onHours={(v) => {
-                    setHours(v);
-                    setHistory([]);
-                  }}
-                />
+                <Suspense
+                  fallback={
+                    <p className="fleet-empty">Loading host observations…</p>
+                  }
+                >
+                  <NodeDetail
+                    key={selected}
+                    detail={detail}
+                    history={history}
+                    hours={hours}
+                    onHours={(v) => {
+                      setHours(v);
+                      clearHistory();
+                    }}
+                  />
+                </Suspense>
               ) : (
                 <p className="fleet-empty">Loading host observations...</p>
               )}

@@ -309,9 +309,10 @@ progress {
   display: flex;
   flex-direction: column;
   padding: 24px 14px 14px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 .brand {
+  flex-shrink: 0;
   font-size: 23px;
   font-weight: 700;
   letter-spacing: -0.8px;
@@ -326,16 +327,25 @@ progress {
   color: #8fb8ef;
 }
 .workspace-label {
+  flex-shrink: 0;
   font-size: 12px;
   margin: 10px 10px 22px;
   color: var(--nav-faint);
 }
 .sidebar nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--nav-line) transparent;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 .nav-group {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -378,8 +388,8 @@ progress {
   background: #8fb8ef;
 }
 .nav-count {
-  background: var(--bad);
-  color: #fff;
+  background: var(--nav-active);
+  color: var(--nav-text);
   border-radius: 10px;
   font-size: 11px;
   font-weight: 600;
@@ -387,8 +397,8 @@ progress {
   padding: 1px 7px;
 }
 .sidebar-bottom {
-  margin-top: auto;
-  padding-top: 24px;
+  flex-shrink: 0;
+  padding-top: 14px;
 }
 .host-chip {
   display: flex;
@@ -2205,7 +2215,11 @@ details.panel-description summary {
     padding: 0;
     justify-content: center;
   }
+  .nav-group-desktop-only {
+    display: none;
+  }
   .brand span,
+  .nav-label,
   .workspace-label,
   .sidebar-bottom,
   .nav-count,
@@ -2408,4 +2422,42 @@ details.panel-description summary {
   color: var(--text-muted);
   font-weight: 400;
   margin-top: 4px;
+}
+
+.nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar nav button svg {
+  flex-shrink: 0;
+}
+.sidebar-status {
+  padding: 12px 8px;
+  border-top: 1px solid var(--nav-line);
+}
+.sidebar-status p {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.sidebar-status small {
+  display: block;
+  margin-top: 7px;
+  color: var(--nav-faint);
+  font-size: 11px;
+}
+.connection-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.nav-count-alert {
+  background: var(--bad);
+  color: #fff;
 }

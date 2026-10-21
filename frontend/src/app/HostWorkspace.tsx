@@ -1,6 +1,9 @@
 import { PaginatedList } from "../components/PaginatedList";
 import { HostSwitcher } from "../components/HostSwitcher";
 import { useHostApi } from "../lib/HostApi";
+import { AppSidebar } from "../components/AppSidebar";
+import { hostPages, hostPageGroups, hostPageId } from "./navigation";
+import { SignIn } from "./SignIn";
 import {
   SupportOverview,
   ResourceDiagnostics,
@@ -19,21 +22,17 @@ import {
   Cpu,
   Download,
   ExternalLink,
-  Gauge,
   GitBranch,
   HardDrive,
-  LayoutDashboard,
   LogOut,
   MemoryStick,
   Network,
   RefreshCw,
   Search,
   Server,
-  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Thermometer,
-  Timer,
   TriangleAlert,
   X,
   Zap,
@@ -50,7 +49,6 @@ import {
   YAxis,
 } from "recharts";
 import {
-  api,
   bytes,
   download,
   duration,
@@ -87,92 +85,6 @@ import { LiveCheckpoints } from "../features/workloads/LiveCheckpoints";
 import { GitLabSetup } from "../features/workloads/GitLabSetup";
 import { Badge, tone } from "../components/Status";
 import { ThemeToggle } from "../components/ThemeToggle";
-
-export const hostPages = [
-  {
-    id: "overview",
-    title: "Overview",
-    icon: LayoutDashboard,
-    group: "Monitor",
-    scoped: true,
-    description:
-      "A live picture of capacity, workloads, and what needs attention.",
-  },
-  {
-    id: "host",
-    title: "Host & hardware",
-    icon: Server,
-    group: "Monitor",
-    description:
-      "CPU, memory, storage, network, GPU, services and processes on this node.",
-  },
-  {
-    id: "docker",
-    title: "Docker",
-    icon: Box,
-    group: "Monitor",
-    scoped: true,
-    description:
-      "Containers, images and build cache in this node's Docker engine.",
-  },
-  {
-    id: "gitlab",
-    title: "Runner stack",
-    icon: GitBranch,
-    group: "CI runner",
-    scoped: true,
-    description:
-      "Runner health, CI workers, toolchain images and cache volumes on this node.",
-  },
-  {
-    id: "projects",
-    title: "Projects & pipelines",
-    icon: ClipboardList,
-    group: "CI runner",
-    scoped: true,
-    description: "Repositories, pipelines and images observed on this runner.",
-  },
-  {
-    id: "survey",
-    title: "Survey & benchmarks",
-    icon: Timer,
-    group: "CI runner",
-    scoped: true,
-    description:
-      "Capture live checkpoints and compare them with recorded benchmark runs.",
-  },
-  {
-    id: "optimization",
-    title: "Optimization",
-    icon: Zap,
-    group: "CI runner",
-    description: "Measured opportunities and the next step for each resource.",
-  },
-  {
-    id: "operations",
-    title: "Operations",
-    icon: SlidersHorizontal,
-    group: "Manage",
-    description:
-      "Change runner capacity and manage local images. Every change is reviewed before it runs.",
-  },
-  {
-    id: "activity",
-    title: "Activity & audit",
-    icon: Activity,
-    group: "Manage",
-    description: "Active threshold alerts and the history of every action.",
-  },
-  {
-    id: "connections",
-    title: "Connections",
-    icon: Settings,
-    group: "Manage",
-    description:
-      "Know what is connected, how fresh it is, and what to configure.",
-  },
-];
-const groups = [...new Set(hostPages.map((p) => p.group))];
 
 function SourceNotice({ source, name }: { source?: Source; name: string }) {
   if (!source || (source.status === "healthy" && !source.stale)) return null;
@@ -364,74 +276,6 @@ function Chart({
     </div>
   );
 }
-export function SignIn({
-  onSignIn,
-  central = false,
-}: {
-  onSignIn: (token: string) => void;
-  central?: boolean;
-}) {
-  const [value, setValue] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  return (
-    <main className="login">
-      <div className="login-theme">
-        <ThemeToggle />
-      </div>
-      <div className="login-brand">
-        <Gauge size={38} />
-        <span>OpsDeck</span>
-        <p>Your infrastructure, in view.</p>
-      </div>
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          setError("");
-          try {
-            await api("snapshot", value);
-            onSignIn(value);
-          } catch (err) {
-            setError((err as Error).message);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <ShieldCheck size={24} />
-        <h1>Open your workspace</h1>
-        <p>
-          Use the access token configured on your server. It stays in this
-          browser tab for the session.
-        </p>
-        <label htmlFor="token">Access token</label>
-        <input
-          id="token"
-          type="password"
-          autoComplete="off"
-          required
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="Enter your server access token"
-        />
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        <button className="primary" disabled={busy}>
-          {busy ? "Connecting…" : "Connect to OpsDeck"}
-          <ChevronRight size={16} />
-        </button>
-        <small>
-          {central ? "Fleet monitoring" : "Single-host monitoring"} ·
-          Credentials stay on the server
-        </small>
-      </form>
-    </main>
-  );
-}
 export type FleetNavigation = {
   hosts: Array<{
     id: string;
@@ -453,7 +297,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
   const [token, setToken] = useState(
     () => sessionStorage.getItem("opsdeck.token") || "",
   );
-  const [page, setPageState] = useState(() => fleet?.initialPage || "overview");
+  const [page, setPageState] = useState(() => hostPageId(fleet?.initialPage));
   function setPage(next: string) {
     setPageState(next);
     if (fleet) {
@@ -740,82 +584,77 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
   );
   return (
     <div className="workspace">
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            setPage("overview");
-          }}
-        >
-          <Gauge size={28} />
-          <span>OpsDeck</span>
-        </a>
-        <div className="workspace-label">Infrastructure workspace</div>
-        <nav aria-label="Main navigation">
-          {fleet && (
-            <div className="nav-group">
-              <span className="nav-group-label">Fleet</span>
-              <button onClick={fleet.onFleet}>
-                <Network size={18} />
-                All hosts
-              </button>
-              <button onClick={fleet.onEnroll}>
-                <Server size={18} />
-                Enroll host
-              </button>
-              <button onClick={fleet.onAgent}>
-                <ShieldCheck size={18} />
-                Agent access
-              </button>
+      <AppSidebar
+        onHome={() => setPage("overview")}
+        onSignOut={signOut}
+        caption="Infrastructure workspace"
+        footer={
+          <>
+            {" "}
+            <div className="host-chip">
+              <span
+                className={`status-dot ${error ? "bad" : Object.values(sources).some((s) => s.stale || tone(s.status) === "bad") ? "warn" : "good"}`}
+              />
+              <div>
+                <strong>{host?.hostname || "Connecting to host"}</strong>
+                <small>
+                  {connected}/{Object.keys(sources).length || 5} integrations
+                  available
+                </small>
+              </div>
             </div>
-          )}
-          {groups.map((group) => (
-            <div className="nav-group" key={group}>
-              <span className="nav-group-label">{group}</span>
-              {hostPages
-                .filter((p) => p.group === group)
-                .map((p) => (
-                  <button
-                    key={p.id}
-                    aria-label={p.title}
-                    aria-current={page === p.id ? "page" : undefined}
-                    className={page === p.id ? "active" : ""}
-                    onClick={() => {
-                      setPage(p.id);
-                      setQuery("");
-                    }}
-                  >
-                    <p.icon size={18} />
-                    {p.title}
-                    {p.id === "activity" && alerts.length > 0 && (
-                      <span className="nav-count">{alerts.length}</span>
-                    )}
-                  </button>
-                ))}
-            </div>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="host-chip">
-            <span
-              className={`status-dot ${error ? "bad" : Object.values(sources).some((s) => s.stale || tone(s.status) === "bad") ? "warn" : "good"}`}
-            />
-            <div>
-              <strong>{host?.hostname || "Connecting to host"}</strong>
-              <small>
-                {connected}/{Object.keys(sources).length || 5} integrations
-                available
-              </small>
-            </div>
-          </div>
-          <button onClick={signOut}>
-            <LogOut size={16} />
-            Sign out
-          </button>
-        </div>
-      </aside>
+          </>
+        }
+        groups={[
+          ...(fleet
+            ? [
+                {
+                  label: "Fleet",
+                  items: [
+                    {
+                      id: "fleet",
+                      label: "All hosts",
+                      icon: Network,
+                      onClick: fleet.onFleet,
+                    },
+                    {
+                      id: "enroll",
+                      label: "Enroll host",
+                      icon: Server,
+                      onClick: fleet.onEnroll,
+                    },
+                    {
+                      id: "agent",
+                      label: "Agent access",
+                      icon: ShieldCheck,
+                      onClick: fleet.onAgent,
+                    },
+                  ],
+                },
+              ]
+            : []),
+          ...hostPageGroups.map((group) => ({
+            label: group,
+            items: hostPages
+              .filter((p) => p.group === group)
+              .map((p) => ({
+                id: p.id,
+                label: p.title,
+                icon: p.icon,
+                active: page === p.id,
+                alert: p.id === "activity",
+                count:
+                  p.id === "activity" && alerts.length
+                    ? alerts.length
+                    : undefined,
+                onClick: () => {
+                  setPage(p.id);
+                  setQuery("");
+                },
+              })),
+          })),
+        ]}
+      />
       <div className="main">
         <header className="topbar">
           {fleet ? (

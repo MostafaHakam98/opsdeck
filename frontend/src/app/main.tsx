@@ -1,9 +1,20 @@
-import React, { useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { FleetApp } from "../features/fleet/FleetApp";
-import { HostWorkspace, SignIn } from "./HostWorkspace";
+import { SignIn } from "./SignIn";
+import { WorkspaceBoundary } from "./WorkspaceBoundary";
+import "./styles.css";
 import { applyTheme, storedTheme } from "../components/ThemeToggle";
 applyTheme(storedTheme());
+const FleetApp = lazy(() =>
+  import("../features/fleet/FleetApp").then((module) => ({
+    default: module.FleetApp,
+  })),
+);
+const HostWorkspace = lazy(() =>
+  import("./HostWorkspace").then((module) => ({
+    default: module.HostWorkspace,
+  })),
+);
 
 function Deployment() {
   const [mode, setMode] = useState<string | null>(null);
@@ -38,14 +49,28 @@ function Deployment() {
         )}
       </main>
     );
-  return mode === "central" ? (
-    <FleetApp signIn={(callback) => <SignIn central onSignIn={callback} />} />
-  ) : (
-    <HostWorkspace />
+  return (
+    <Suspense
+      fallback={
+        <main className="login">
+          <p>Opening OpsDeck…</p>
+        </main>
+      }
+    >
+      {mode === "central" ? (
+        <FleetApp
+          signIn={(callback) => <SignIn central onSignIn={callback} />}
+        />
+      ) : (
+        <HostWorkspace />
+      )}
+    </Suspense>
   );
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <Deployment />
+    <WorkspaceBoundary>
+      <Deployment />
+    </WorkspaceBoundary>
   </React.StrictMode>,
 );

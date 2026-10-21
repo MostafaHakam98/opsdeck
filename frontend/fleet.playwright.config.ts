@@ -10,6 +10,7 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:8083",
     headless: true,
     screenshot: "only-on-failure",
+    trace: "retain-on-failure",
   },
   webServer: {
     command: "cd .. && .venv/bin/python -m backend.run",

@@ -8,12 +8,14 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:8082",
     headless: true,
     screenshot: "only-on-failure",
+    trace: "retain-on-failure",
   },
   webServer: {
     command: "cd .. && .venv/bin/python -m backend.run",
     url: "http://127.0.0.1:8082/healthz",
     timeout: 30000,
     env: {
+      OPSDECK_MODE: "standalone",
       OPSDECK_TOKEN: "browser-test-token-at-least-32-characters",
       OPSDECK_BIND: "127.0.0.1",
       OPSDECK_PORT: "8082",

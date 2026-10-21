@@ -1,72 +1,3 @@
-.fleet-shell {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  min-height: 100vh;
-}
-.fleet-sidebar {
-  background: var(--nav-bg);
-  color: var(--nav-text);
-  padding: 28px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.fleet-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 10px;
-  color: white;
-  font-size: 24px;
-}
-.fleet-sidebar-caption {
-  padding: 4px 10px 17px;
-  color: var(--nav-faint);
-}
-.fleet-sidebar button {
-  justify-content: flex-start;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: transparent;
-  color: var(--nav-text);
-  border: 0;
-  text-align: left;
-  width: 100%;
-  padding: 11px 12px;
-}
-.fleet-sidebar button span {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
-.fleet-sidebar button:hover {
-  background: var(--nav-hover);
-}
-.fleet-sidebar button.active {
-  background: var(--nav-active);
-  color: white;
-}
-.fleet-clusters {
-  border-bottom: 1px solid var(--nav-line);
-  padding-bottom: 18px;
-  margin-bottom: 12px;
-  max-height: 50vh;
-  overflow: auto;
-}
-.fleet-sidebar-bottom {
-  margin-top: auto;
-  padding-top: 40px;
-}
-.fleet-sidebar-bottom p {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.fleet-sidebar-bottom small {
-  display: block;
-  padding: 8px 0 20px;
-  color: var(--nav-faint);
-}
 .fleet-body {
   min-width: 0;
 }
@@ -87,13 +18,6 @@
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-}
-.fleet-topbar > span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .fleet-topbar > div {
   flex-shrink: 0;
@@ -454,9 +378,6 @@
   .fleet-source-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .fleet-shell {
-    grid-template-columns: 200px minmax(0, 1fr);
-  }
   .fleet-main {
     padding: 24px;
   }
@@ -476,28 +397,6 @@
   .fleet-cluster-filter select {
     min-width: 0;
     max-width: 240px;
-  }
-  .fleet-shell {
-    display: block;
-  }
-  .fleet-sidebar {
-    padding: 16px;
-  }
-  .fleet-sidebar-caption,
-  .fleet-sidebar-bottom,
-  .fleet-clusters {
-    display: none;
-  }
-  .fleet-sidebar {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-  .fleet-brand {
-    width: 100%;
-    padding-bottom: 14px;
-  }
-  .fleet-sidebar > button {
-    width: auto;
   }
   .fleet-main {
     padding: 20px 14px;
@@ -526,30 +425,9 @@
   }
 }
 
-.fleet-sidebar {
-  overflow-y: auto;
-}
-.fleet-host-nav {
-  margin: 12px 0;
-}
-.fleet-host-nav > span {
-  display: block;
-  padding: 7px 12px;
-  color: var(--muted);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.fleet-host-nav button {
-  font-size: 12px;
-}
-
-@media (min-width: 701px) {
-  .fleet-sidebar { position: sticky; top: 0; height: 100vh; }
-}
-@media (max-width: 700px) {
-  .fleet-sidebar nav { width: 100%; }
-  .fleet-host-nav { display: flex; flex-wrap: wrap; gap: 4px; }
-  .fleet-host-nav > span { width: 100%; }
-  .fleet-host-nav button { width: auto; padding: 8px; }
+@media (max-width: 800px) {
+  .fleet-filter .fleet-cluster-filter {
+    display: flex;
+    max-width: 100%;
+  }
 }
