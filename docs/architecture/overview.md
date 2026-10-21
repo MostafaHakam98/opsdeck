@@ -6,6 +6,8 @@
 
 Fleet samples are deduplicated by `(node_id, sample_id)`. Enrollment metadata and cluster assignment come from the operator; an agent credential is bound to its enrolled identity. Backfilled observations populate history without replacing a newer snapshot. Fleet and standalone tables coexist, but their histories are not implicitly mixed. Fleet overview reads compact summaries; detailed inventory is loaded for a selected host only. See [Fleet deployment](../operations/fleet.md).
 
+The optional workspace relay in `backend/workspace.py` and `backend/workspace_agent.py` lets the same host UI reach its existing standalone API. The agent claims allowlisted requests over outbound HTTPS, uses a separate host credential locally, and streams replies back. The central process has no host mounts or local controls. Existing checkpoints, findings, GitLab connections, previews, and operations remain owned by the standalone host service. The UI scopes every nested request through `HostApiProvider`; switching hosts remounts the workspace to clear previous host state.
+
 ## Standalone mode
 
 ```mermaid
@@ -38,6 +40,7 @@ Collectors poll independently in background tasks, with blocking reads in worker
 | `backend/findings.py` | Validated private survey archives and independent current checks |
 | `backend/config.py`, `backend/run.py` | Environment settings and one-worker launcher |
 | `backend/store.py` | SQLite samples, averaged history buckets, audit events |
+| `backend/workspace.py`, `backend/workspace_agent.py` | Bounded per-host outbound workspace API relay |
 | `backend/actions.py` | Ownership validation, previews, expiry, replay protection, execution |
 | `backend/workloads.py`, `backend/gitlab_connection.py` | Retained workload attribution, scoped checkpoints, and private read-only GitLab setup |
 | `backend/operations.py` | Runner-control client, bounded uploads, operation previews and serialized local image tasks |
