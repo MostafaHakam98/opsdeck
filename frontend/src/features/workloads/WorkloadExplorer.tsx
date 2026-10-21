@@ -1,5 +1,6 @@
+import { useHostApi } from "../../lib/HostApi";
 import { useEffect, useState } from "react";
-import { api, bytes, duration, safeUrl } from "../../lib/api";
+import { bytes, duration, safeUrl } from "../../lib/api";
 import { Pager } from "../../components/Pager";
 import { scopeQuery, type Scope, type WorkloadView } from "./useWorkloads";
 import { WorkloadSummary } from "./ScopeControls";
@@ -17,6 +18,7 @@ export function WorkloadExplorer({
   onRefresh: () => void;
   onScope: (scope: Scope) => void;
 }) {
+  const { api } = useHostApi();
   const [kind, setKind] = useState("pipelines"),
     [query, setQuery] = useState(""),
     [status, setStatus] = useState("all"),

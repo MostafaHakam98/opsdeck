@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 from backend.store import Store
+from backend.workspace import WorkspaceRelay
 
 MAX_TELEMETRY_BYTES = 2 * 1024 * 1024
 SOURCE_NAMES = ("host", "docker", "gpu", "runner", "services")
@@ -108,6 +109,13 @@ class Fleet(Store):
         if not row or row[1] or not hmac.compare_digest(row[0], digest):
             raise HTTPException(401, "Valid agent credential required")
         return identifier, digest
+
+    def check_credential(self, credential):
+        identifier, digest = credential
+        with self.connect() as db:
+            active = db.execute("SELECT 1 FROM fleet_nodes WHERE id=? AND token_hash=? AND revoked=0", (identifier, digest)).fetchone()
+        if not active:
+            raise HTTPException(401, "Valid agent credential required")
 
     def change_credential(self, identifier, rotate=False):
         token = identifier + "." + secrets.token_urlsafe(32)
@@ -213,6 +221,7 @@ class Fleet(Store):
 def create_fleet_app(settings):
     fleet = Fleet(settings.db)
     attempts = {}
+    relay = WorkspaceRelay(str(settings.db) + ".workspace", settings.image_upload_max_gib * 1024 ** 3)
 
     async def maintain():
         while True:
@@ -228,6 +237,7 @@ def create_fleet_app(settings):
 
     app = FastAPI(title="OpsDeck Fleet", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.fleet = fleet
+    app.state.workspace = relay
 
     def bearer(authorization):
         return authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
@@ -272,19 +282,44 @@ def create_fleet_app(settings):
 
     @app.post("/api/fleet/nodes/{identifier}/revoke", dependencies=[Depends(authenticate)])
     def revoke(identifier: UUID):
+        relay.cancel(str(identifier))
         return fleet.change_credential(str(identifier))
 
     @app.post("/api/fleet/nodes/{identifier}/rotate", dependencies=[Depends(authenticate)])
     def rotate(identifier: UUID):
+        relay.cancel(str(identifier))
         return fleet.change_credential(str(identifier), rotate=True)
 
     @app.get("/api/fleet/nodes/{identifier}", dependencies=[Depends(authenticate)])
     def node(identifier: UUID):
-        return fleet.snapshot(str(identifier), settings.interval)
+        return {**fleet.snapshot(str(identifier), settings.interval), "workspace_connected": relay.online(str(identifier))}
 
     @app.get("/api/fleet/nodes/{identifier}/history", dependencies=[Depends(authenticate)])
     def history(identifier: UUID, hours: int = Query(default=1, ge=1, le=720)):
         return fleet.node_history(str(identifier), hours)
+
+    @app.api_route("/api/fleet/nodes/{identifier}/workspace/{path:path}", methods=["GET", "POST"], dependencies=[Depends(authenticate)])
+    async def workspace(identifier: UUID, path: str, request: Request):
+        node = next((n for n in fleet.nodes(settings.interval) if n["id"] == str(identifier)), None)
+        if node is None:
+            raise HTTPException(404, "Node not found")
+        if node["revoked"]:
+            raise HTTPException(409, "This host's agent has been revoked")
+        if request.method == "POST":
+            fleet.event("action", "info", "Host workspace request", node["name"] + ": " + path)
+        return await relay.forward(str(identifier), path, request)
+
+    @app.get("/api/agent/workspace/requests")
+    async def workspace_claim(credential=Depends(agent_auth)):
+        return await relay.claim(credential[0], lambda: fleet.check_credential(credential))
+
+    @app.get("/api/agent/workspace/requests/{identifier}/body")
+    def workspace_body(identifier: UUID, credential=Depends(agent_auth)):
+        return relay.body(credential[0], str(identifier))
+
+    @app.post("/api/agent/workspace/requests/{identifier}/result")
+    async def workspace_complete(identifier: UUID, request: Request, credential=Depends(agent_auth)):
+        return await relay.complete(credential[0], str(identifier), request)
 
     @app.get("/api/events", dependencies=[Depends(authenticate)])
     def events():

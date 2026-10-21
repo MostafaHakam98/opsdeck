@@ -1,5 +1,5 @@
+import { useHostApi } from "../../lib/HostApi";
 import { useEffect, useState } from "react";
-import { api } from "../../lib/api";
 export type Scope = {
   project: string;
   pipeline: string;
@@ -29,6 +29,7 @@ export type WorkloadView = {
   coverage: { truncated: boolean; gitlab_status: string; note: string };
 };
 export function useWorkloads(token: string, scope: Scope, refresh: number) {
+  const { api } = useHostApi();
   const [data, setData] = useState<WorkloadView>();
   const [error, setError] = useState("");
   useEffect(() => {

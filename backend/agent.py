@@ -21,6 +21,7 @@ from backend.collectors import DockerCollector, HostCollector, failure, gpu_coll
 from backend.config import Settings
 from backend.fleet import MAX_TELEMETRY_BYTES, SOURCE_NAMES
 from backend.run import load_environment
+from backend.workspace_agent import WorkspaceSettings, run_workspace
 
 logger = logging.getLogger("opsdeck.agent")
 
@@ -128,6 +129,8 @@ def exclusive_spool(path):
 
 async def run(settings):
     local = Settings()
+    workspace = WorkspaceSettings()
+    workspace.validate()
     spool = Spool(settings)
     state = {name: {"status": "collecting", "data": None, "message": "Waiting for the first sample", "updated_at": None} for name in SOURCE_NAMES}
     host, engine = HostCollector(local.host_root, local.procfs_path, local.scope), DockerCollector()
@@ -169,7 +172,7 @@ async def run(settings):
                 await asyncio.sleep(delay + (random.random() if not success else 0))
 
     tasks = [asyncio.create_task(collect(name, fn)) for name, fn in collectors.items()]
-    tasks += [asyncio.create_task(sample()), asyncio.create_task(send())]
+    tasks += [asyncio.create_task(sample()), asyncio.create_task(send()), asyncio.create_task(run_workspace(settings, workspace))]
     try:
         await stop.wait()
     finally:

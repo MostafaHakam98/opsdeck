@@ -10,9 +10,11 @@ chmod 600 .env.agent
 .venv/bin/python - <<'PY'
 from pathlib import Path
 from backend.agent import AgentSettings
+from backend.workspace_agent import WorkspaceSettings
 from backend.run import load_environment
 load_environment(Path('.env.agent'))
 AgentSettings().validate()
+WorkspaceSettings().validate()
 PY
 mkdir -p data "$HOME/.config/systemd/user"
 cat > "$HOME/.config/systemd/user/opsdeck-agent.service" <<EOF

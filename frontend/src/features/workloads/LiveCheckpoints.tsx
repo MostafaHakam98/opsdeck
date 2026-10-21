@@ -1,6 +1,7 @@
+import { useHostApi } from "../../lib/HostApi";
 import { PaginatedList } from "../../components/PaginatedList";
 import { useEffect, useState } from "react";
-import { api, bytes, download, duration } from "../../lib/api";
+import { bytes, download, duration } from "../../lib/api";
 import { Pager } from "../../components/Pager";
 import { type Scope, type WorkloadView } from "./useWorkloads";
 import { WorkloadSummary } from "./ScopeControls";
@@ -26,6 +27,7 @@ export function LiveCheckpoints({
   view?: WorkloadView;
   onChanged: () => void;
 }) {
+  const { api } = useHostApi();
   const [rows, setRows] = useState<Checkpoint[]>([]),
     [title, setTitle] = useState(""),
     [notes, setNotes] = useState(""),

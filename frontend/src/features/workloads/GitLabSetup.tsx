@@ -1,5 +1,5 @@
+import { useHostApi } from "../../lib/HostApi";
 import { useEffect, useState } from "react";
-import { api } from "../../lib/api";
 type Connection = {
   enabled: boolean;
   url: string;
@@ -15,6 +15,7 @@ export function GitLabSetup({
   token: string;
   onChanged: () => void;
 }) {
+  const { api } = useHostApi();
   const [connection, setConnection] = useState<Connection>(),
     [url, setUrl] = useState(""),
     [secret, setSecret] = useState(""),

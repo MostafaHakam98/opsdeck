@@ -95,9 +95,7 @@ test("header switches across clusters, restores host URLs, and returns to all ho
   ).toBeVisible();
   await expect(page).not.toHaveURL(/node=/);
   await page.getByLabel("Search hosts").fill("does-not-match");
-  await page
-    .getByRole("button", { name: "Activity & audit", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Fleet audit", exact: true }).click();
   await picker.selectOption(b.id);
   await expect(
     page.getByRole("heading", { name: b.name, exact: true }),

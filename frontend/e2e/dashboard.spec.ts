@@ -960,3 +960,135 @@ test("theme choice applies dark tokens, persists, and returns to system", async 
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await background()).not.toBe(light);
 });
+
+test("fleet retains the complete host sidebar and scopes every original page to the selected host", async ({
+  page,
+  request,
+}) => {
+  const auth = { Authorization: `Bearer ${token}` };
+  const snapshot = await (
+    await request.get("/api/snapshot", { headers: auth })
+  ).json();
+  const nodes = ["a", "b"].map((id) => ({
+    id: `workspace-${id}`,
+    name: `runner-${id}`,
+    cluster: `cluster-${id}`,
+    hostname: `host-${id}`,
+    status: "online",
+    metrics: {},
+    source_status: {},
+  }));
+  const seen: string[] = [];
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/healthz", (route) =>
+    route.fulfill({ json: { status: "ok", mode: "central" } }),
+  );
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/fleet" || url.pathname === "/api/snapshot") {
+      return route.fulfill({ json: { nodes, retention_days: 30 } });
+    }
+    const node = nodes.find((node) =>
+      url.pathname.startsWith(`/api/fleet/nodes/${node.id}`),
+    );
+    if (node && url.pathname.includes("/workspace/")) {
+      seen.push(url.pathname);
+      const path = url.pathname.split("/workspace/")[1];
+      if (path === "snapshot") {
+        const copy = structuredClone(snapshot);
+        if (copy.sources.host.data)
+          copy.sources.host.data.hostname = node.hostname;
+        return route.fulfill({ json: copy });
+      }
+      const response = await request.get(`/api/${path}${url.search}`, {
+        headers: auth,
+      });
+      return route.fulfill({ response });
+    }
+    if (node)
+      return route.fulfill({
+        json: url.pathname.endsWith("/history")
+          ? []
+          : { node, sources: snapshot.sources, workspace_connected: true },
+      });
+    throw new Error(`Unexpected unscoped API request: ${url.pathname}`);
+  });
+  await page.goto("/");
+  await page.getByLabel("Access token", { exact: true }).fill(token);
+  await page.getByRole("button", { name: "Connect to OpsDeck" }).click();
+  const sections = [
+    "Overview",
+    "Host & hardware",
+    "Docker",
+    "Runner stack",
+    "Projects & pipelines",
+    "Survey & benchmarks",
+    "Optimization",
+    "Operations",
+    "Activity & audit",
+    "Connections",
+  ];
+  for (const name of sections)
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Docker", exact: true }).click();
+  await expect(page.getByText("Select a host to open Docker.")).toBeVisible();
+  const picker = page.getByRole("combobox", { name: "Switch host" });
+  await picker.selectOption(nodes[0].id);
+  await expect(
+    page.getByRole("heading", { name: "Docker", exact: true }),
+  ).toBeVisible();
+  for (const name of sections) {
+    await page.getByRole("button", { name, exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+  }
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Connections", exact: true }),
+  ).toBeVisible();
+  await picker.selectOption(nodes[1].id);
+  await expect(
+    page.getByRole("heading", { name: "Connections", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".host-chip")).toContainText(nodes[1].hostname);
+  expect(
+    seen.some((path) =>
+      path.includes(`${nodes[0].id}/workspace/operations/capabilities`),
+    ),
+  ).toBe(true);
+  expect(
+    seen.some((path) => path.includes(`${nodes[1].id}/workspace/snapshot`)),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Agent access", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Agent access", exact: true }),
+  ).toBeVisible();
+  await picker.selectOption("");
+  await expect(
+    page.getByRole("heading", { name: "Your runner fleet", exact: true }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await picker.selectOption(nodes[0].id);
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "../.tmp/fleet-sidebar-mobile.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole("radio", { name: "Dark theme" }).click();
+  await page.screenshot({
+    path: "../.tmp/fleet-sidebar-desktop.png",
+    fullPage: true,
+  });
+  expect(errors).toEqual([]);
+});

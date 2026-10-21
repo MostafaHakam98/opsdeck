@@ -19,6 +19,7 @@ export type Fleet = {
   retention_days: number;
 };
 export type Detail = {
+  workspace_connected?: boolean;
   node: Node;
   sources: Record<string, Source>;
   server_time: number;

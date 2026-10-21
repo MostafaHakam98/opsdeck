@@ -21,6 +21,8 @@ import { AgentCredential } from "./AgentCredential";
 import { NodeDetail } from "./NodeDetail";
 import type { Fleet, Detail, Credential, Point } from "./types";
 import "./fleet.css";
+import { HostWorkspace, hostPages } from "../../app/HostWorkspace";
+import { HostApiProvider } from "../../lib/HostApi";
 
 export function FleetApp({
   signIn,
@@ -40,6 +42,11 @@ export function FleetApp({
   const [selected, setSelected] = useState(
     () => new URLSearchParams(window.location.search).get("node") || "",
   );
+  const [section, setSection] = useState(
+    () =>
+      new URLSearchParams(window.location.search).get("section") || "overview",
+  );
+  const [workspaceRequested, setWorkspaceRequested] = useState(false);
   const [view, setView] = useState("fleet");
   const [hours, setHours] = useState(1);
   const [refresh, setRefresh] = useState(0);
@@ -54,6 +61,13 @@ export function FleetApp({
     function restoreHost() {
       setSelected(
         new URLSearchParams(window.location.search).get("node") || "",
+      );
+      setSection(
+        new URLSearchParams(window.location.search).get("section") ||
+          "overview",
+      );
+      setWorkspaceRequested(
+        new URLSearchParams(window.location.search).has("section"),
       );
       setView("fleet");
       setCluster("");
@@ -126,13 +140,21 @@ export function FleetApp({
   }, [token, selected, hours, refresh, view]);
   function rememberHost(id: string) {
     const url = new URL(window.location.href);
-    if ((url.searchParams.get("node") || "") === id) return;
+    if (
+      (url.searchParams.get("node") || "") === id &&
+      (id || !url.searchParams.has("section"))
+    )
+      return;
     if (id) url.searchParams.set("node", id);
-    else url.searchParams.delete("node");
+    else {
+      url.searchParams.delete("node");
+      url.searchParams.delete("section");
+    }
     window.history.pushState(null, "", url);
   }
   function navigate(next: string, nextCluster = cluster) {
     rememberHost("");
+    setWorkspaceRequested(false);
     setView(next);
     setSelected("");
     setDetail(null);
@@ -143,6 +165,9 @@ export function FleetApp({
   }
   function selectNode(id: string) {
     rememberHost(id);
+    setSection(
+      new URLSearchParams(window.location.search).get("section") || "overview",
+    );
     setView("fleet");
     setSelected(id);
     setDetail(null);
@@ -157,6 +182,15 @@ export function FleetApp({
     setCluster("");
     if (id) selectNode(id);
     else navigate("fleet", "");
+  }
+  function openSection(next: string) {
+    const id = selected || (nodes.length === 1 ? nodes[0].id : "");
+    setSection(next);
+    setWorkspaceRequested(true);
+    const url = new URL(window.location.href);
+    url.searchParams.set("section", next);
+    window.history.replaceState(null, "", url);
+    if (id) selectNode(id);
   }
   function signOut() {
     sessionStorage.removeItem("opsdeck.token");
@@ -198,6 +232,29 @@ export function FleetApp({
         .includes(query.toLowerCase()),
   );
   const online = scoped.filter((n) => n.status === "online").length;
+  if (
+    view === "fleet" &&
+    selected &&
+    (detail?.workspace_connected || workspaceRequested)
+  ) {
+    return (
+      <HostApiProvider prefix={`fleet/nodes/${selected}/workspace/`}>
+        <HostWorkspace
+          key={selected}
+          fleet={{
+            hosts: nodes,
+            selected,
+            initialPage: section,
+            onHost: switchHost,
+            onFleet: () => navigate("fleet", ""),
+            onEnroll: () => navigate("enroll"),
+            onAgent: () => setView("agent"),
+            onSignOut: signOut,
+          }}
+        />
+      </HostApiProvider>
+    );
+  }
   return (
     <div className="fleet-shell">
       <aside className="fleet-sidebar">
@@ -226,6 +283,25 @@ export function FleetApp({
             </button>
           ))}
         </div>
+        <nav aria-label="Host workspace navigation">
+          {[...new Set(hostPages.map((p) => p.group))].map((group) => (
+            <div className="fleet-host-nav" key={group}>
+              <span>{group}</span>
+              {hostPages
+                .filter((p) => p.group === group)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    aria-label={p.title}
+                    onClick={() => openSection(p.id)}
+                  >
+                    <p.icon size={17} />
+                    {p.title}
+                  </button>
+                ))}
+            </div>
+          ))}
+        </nav>
         <button
           className={view === "enroll" ? "active" : ""}
           onClick={() => navigate("enroll")}
@@ -238,7 +314,7 @@ export function FleetApp({
           onClick={() => navigate("audit")}
         >
           <Activity size={18} />
-          Activity & audit
+          Fleet audit
         </button>
         <div className="fleet-sidebar-bottom">
           <p>
@@ -288,6 +364,14 @@ export function FleetApp({
             <div className="fleet-warning" role="alert">
               {actionError}
             </div>
+          )}
+          {workspaceRequested && !selected && (
+            <p className="fleet-warning">
+              Select a host to open{" "}
+              {hostPages.find((p) => p.id === section)?.title ||
+                "its workspace"}
+              .
+            </p>
           )}
           {view === "fleet" && !selected && (
             <>
@@ -420,7 +504,7 @@ export function FleetApp({
               )}
             </>
           )}
-          {view === "fleet" && selected && (
+          {(view === "fleet" || view === "agent") && selected && (
             <>
               <button className="fleet-back" onClick={() => navigate("fleet")}>
                 <ArrowLeft size={16} />

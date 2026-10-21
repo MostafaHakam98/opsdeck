@@ -1,5 +1,17 @@
 # Central server and runner agents
 
+The central sidebar retains the original host workspace: Overview, Host & hardware, Docker, Runner stack, Projects & pipelines, Survey & benchmarks, Optimization, Operations, Activity & audit, and Connections. Choose a host in the top bar to use its workspace. With several hosts, clicking a section asks you to choose a host rather than guessing. Host and section survive reloads. **All hosts** returns to the fleet; **Agent access** opens retained observations and credential management. **Fleet audit** records central activity separately from the host's audit.
+
+To connect the complete workspace, keep the existing standalone OpsDeck service on each host and add two settings to its agent's private environment:
+
+- `OPSDECK_WORKSPACE_URL`: the existing host API's HTTP origin, for example `http://127.0.0.1:8080`. A literal IP address assigned to the host is also accepted when the service binds to that interface.
+- `OPSDECK_WORKSPACE_TOKEN`: that existing host API's access token. It remains in the runner's private agent environment, separate from the fleet operator token and the per-host agent credential.
+
+Restart the agent. It opens outbound HTTPS requests to claim work and stream replies; no agent listening port or inbound cluster connectivity is required. The original API supplies the same findings, checkpoints, worker history, GitLab connection, operation jobs, and permission checks. Existing preview, confirmation, and action-disable settings still apply. Read-only central deployments never execute host operations themselves.
+
+Relay paths are an explicit GET/POST allowlist. Requests are bound to a node credential, cancelled on credential changes, limited to eight outstanding requests per host and 32 globally, and never replayed. A timeout after submission has an unknown outcome: inspect host activity before retrying a change. JSON requests are capped at 1 MiB and replies at 8 MiB. Archive uploads stream through private temporary storage on the fleet data volume, with one transfer at a time, the configured `OPSDECK_IMAGE_UPLOAD_MAX_GIB` limit, and at least 2 GiB free space. Temporary bodies are deleted after completion or cancellation. Run a single central application worker; the relay is intentionally process-local. A disconnected workspace shows a connection error while **Agent access** keeps its last telemetry available.
+
+
 OpsDeck can run as a central fleet dashboard on an AWS instance while one outbound agent collects telemetry on each runner host. Each host belongs to a named cluster or network. A host with several GitLab runners needs only one agent.
 
 Use the host selector in the top bar to switch between any enrolled hosts or **All hosts**. Hosts are grouped by cluster, and their connection states stay visible, including stale, offline, and revoked hosts. Selecting a host opens its own observations and history. The selected host is included in the URL, so refresh and browser back/forward preserve navigation. Choosing **All hosts** clears host, cluster, search, and status filters.
