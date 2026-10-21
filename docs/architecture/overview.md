@@ -1,5 +1,13 @@
 # Architecture and access boundaries
 
+## Central fleet mode
+
+`OPSDECK_MODE=central` starts the fleet API without any local collectors or operator controls. `backend/fleet.py` owns node enrollment, credential hashes, bounded telemetry ingestion, latest snapshots, per-node numeric history, freshness, and access audit events. Agents run `python -m backend.agent` on each runner host, reuse the existing local collectors, and push snapshots over outbound HTTPS. The agent has no HTTP listener and uses a bounded durable retry queue.
+
+Fleet samples are deduplicated by `(node_id, sample_id)`. Enrollment metadata and cluster assignment come from the operator; an agent credential is bound to its enrolled identity. Backfilled observations populate history without replacing a newer snapshot. Fleet and standalone tables coexist, but their histories are not implicitly mixed. Fleet overview reads compact summaries; detailed inventory is loaded for a selected host only. See [Fleet deployment](../operations/fleet.md).
+
+## Standalone mode
+
 ```mermaid
 flowchart LR
   B[React browser] -->|Bearer token / same-origin API| API[FastAPI / one worker]
@@ -77,7 +85,7 @@ Host Compose has explicit node access; portable Compose does not. The applicatio
 
 ## Current limits
 
-- One node per instance and one sampler worker per database; no fleet aggregation or distributed tracing.
+- Standalone: one node per instance and one sampler worker per database. Central: one server process with per-node agent ingestion and history. No distributed tracing.
 - Host/history: default 10-second interval. Docker/GPU/runner/services: at least 15 seconds. Survey files: 30 seconds. Optional GitLab: 60 seconds.
 - Docker inventory: 200 containers; stats: 64 running containers. Disk usage: five-minute cache.
 - Processes: top 15 by resident memory. GPU history: first detected device; hardware view: every device.

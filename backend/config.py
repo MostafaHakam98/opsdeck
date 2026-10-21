@@ -2,10 +2,13 @@
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 @dataclass
 class Settings:
+    mode: str = field(default_factory=lambda: os.getenv("OPSDECK_MODE", "standalone"))
+    fleet_url: str = field(default_factory=lambda: os.getenv("OPSDECK_FLEET_URL", "").strip().rstrip("/"))
     token: str = field(default_factory=lambda: os.getenv("OPSDECK_TOKEN", ""))
     db: str = field(default_factory=lambda: os.getenv("OPSDECK_DB", "./data/opsdeck.sqlite"))
     interval: int = field(default_factory=lambda: max(5, int(os.getenv("OPSDECK_SAMPLE_SECONDS", "10"))))
@@ -31,11 +34,26 @@ class Settings:
     static: Path = field(default_factory=lambda: Path(__file__).resolve().parents[1] / "frontend" / "dist")
 
     def validate(self):
+        if self.fleet_url:
+            try:
+                url = urlsplit(self.fleet_url)
+                url.port
+                valid = (url.hostname and not url.username and not url.password and not url.path
+                         and not url.query and not url.fragment and
+                         (url.scheme == "https" or (url.scheme == "http" and url.hostname in ("localhost", "127.0.0.1", "::1"))))
+            except ValueError:
+                valid = False
+            if not valid:
+                raise ValueError("OPSDECK_FLEET_URL must be an HTTPS origin without credentials, path, or query; HTTP is allowed only on loopback")
+        if self.mode not in ("standalone", "central"):
+            raise ValueError("OPSDECK_MODE must be standalone or central")
+        if self.mode == "central" and (self.actions or self.operations):
+            raise ValueError("Central mode does not support host actions or operator controls")
         if len(self.token) < 32 or self.token.startswith("replace-"):
             raise ValueError("Set OPSDECK_TOKEN to a random secret of at least 32 characters")
         if self.gitlab_token and not self.gitlab_url.startswith("https://"):
             raise ValueError("GITLAB_URL must use HTTPS when a token is configured")
         if not 1 <= self.image_upload_max_gib <= 128:
             raise ValueError("OPSDECK_IMAGE_UPLOAD_MAX_GIB must be 1..128")
-        if self.host_root and (not Path(self.host_root).is_absolute() or not Path(self.procfs_path, "meminfo").is_file()):
+        if self.mode == "standalone" and self.host_root and (not Path(self.host_root).is_absolute() or not Path(self.procfs_path, "meminfo").is_file()):
             raise ValueError("Host monitoring requires an absolute host root and a readable host procfs mount")

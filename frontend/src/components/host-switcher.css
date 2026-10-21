@@ -1,0 +1,51 @@
+.host-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-muted);
+}
+.host-switcher > svg {
+  flex-shrink: 0;
+}
+.host-switcher select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 26px 8px 8px;
+  border: 1px solid transparent;
+  background-color: var(--surface);
+  color: var(--text);
+  text-overflow: ellipsis;
+  font-size: 13px;
+  cursor: pointer;
+}
+.host-switcher select:hover {
+  background-color: var(--surface-2);
+  border-color: var(--border);
+}
+.host-switcher select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.topbar > .host-switcher,
+.fleet-topbar > .host-switcher {
+  flex: 1;
+  max-width: 640px;
+}
+@media (max-width: 600px) {
+  .topbar {
+    height: auto;
+    min-height: 60px;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .topbar > .host-switcher {
+    flex-basis: 100%;
+  }
+  .topbar > div {
+    margin-left: auto;
+  }
+}

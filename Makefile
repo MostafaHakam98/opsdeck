@@ -7,6 +7,8 @@ COMPOSE_EXTRA ?=
 COMPOSE := docker compose --project-directory . -f deploy/docker/compose.yaml $(if $(COMPOSE_EXTRA),-f $(COMPOSE_EXTRA))
 HOST_COMPOSE := $(COMPOSE) -f deploy/docker/compose.host.yaml
 GPU_COMPOSE := $(HOST_COMPOSE) -f deploy/docker/compose.gpu.yaml
+CENTRAL_COMPOSE := $(COMPOSE) -f deploy/docker/compose.central.yaml
+AGENT_COMPOSE := $(HOST_COMPOSE) -f deploy/docker/compose.agent.yaml
 DOCKER_SOCKET ?= /var/run/docker.sock
 DOCKER_SOCKET_GID = $(shell stat -c '%g' '$(DOCKER_SOCKET)' 2>/dev/null)
 IMAGE ?= opsdeck:local
@@ -103,6 +105,32 @@ docker-gpu-up: init ## Start host monitoring with NVIDIA utility access (require
 
 docker-sandbox-up: init ## Start the portable app with isolated namespaces and localhost port publishing
 	$(COMPOSE) up -d --build --wait
+
+.PHONY: central central-up central-https-up agent agent-install agent-status agent-logs docker-agent-up
+central: init build ## Run the fleet server locally, without collecting the server host
+	OPSDECK_MODE=central OPSDECK_ACTIONS=false OPSDECK_OPERATIONS=false $(VENV) -m backend.run
+
+central-up: init ## Start the central fleet server on localhost with persistent storage
+	$(CENTRAL_COMPOSE) up -d --build --wait
+
+central-https-up: init ## Start the central fleet server and Caddy HTTPS proxy (set OPSDECK_DOMAIN)
+	$(CENTRAL_COMPOSE) --profile https up -d --build --wait
+
+agent: ## Run this host's outbound agent using private .env.agent configuration
+	$(VENV) -m backend.agent
+
+agent-install: ## Install this host's outbound agent as a persistent user service
+	bash deploy/native/install-agent.sh
+
+agent-status: ## Show the host agent service state
+	systemctl --user status opsdeck-agent --no-pager
+
+agent-logs: ## Follow the host agent logs
+	journalctl --user -u opsdeck-agent -f
+
+docker-agent-up: ## Start the outbound agent with Linux host visibility (requires .env.agent)
+	@test -f .env.agent || { echo 'Enroll the host and create .env.agent first.' >&2; exit 1; }
+	OPSDECK_DOCKER_GID=$${OPSDECK_DOCKER_GID:-$(DOCKER_SOCKET_GID)} $(AGENT_COMPOSE) up -d --build
 
 docker-status: ## Show container status
 	$(COMPOSE) ps

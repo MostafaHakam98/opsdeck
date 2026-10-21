@@ -74,3 +74,9 @@ Only approved fact fields are returned; runner authentication tokens are not rea
 Host mode reads PID 1's mount table and maps filesystem paths under the mounted host root. It uses the mounted procfs for RAM, counters, pressure, and process observations. Host networking aligns interface metadata with the node. Host systemd reads use its mounted system-bus socket when available.
 
 NVIDIA telemetry uses `nvidia-smi`. Native mode uses the installed node driver. GPU Compose adds NVIDIA utility capability through Container Toolkit; no CUDA compiler or compute workload is bundled.
+
+## Fleet configuration
+
+Set `OPSDECK_MODE=central` on the hosted server and use a per-host `OPSDECK_AGENT_TOKEN` with `OPSDECK_SERVER_URL` on each runner. See [Fleet deployment](../operations/fleet.md) for the complete agent, queue, TLS, and server settings. The default remains `standalone`.
+
+Set `OPSDECK_FLEET_URL` on a standalone dashboard to enable its header's **All hosts** link to the central dashboard. Use an HTTPS origin without credentials, a path, or query parameters. HTTP loopback origins are accepted for development. The central server retains its own login; the local token is not shared.

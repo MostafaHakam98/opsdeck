@@ -7,6 +7,7 @@ export type Source<T = any> = {
   stale: boolean;
 };
 export type Snapshot = {
+  fleet_url?: string | null;
   sources: Record<string, Source>;
   alerts: Array<{
     key: string;

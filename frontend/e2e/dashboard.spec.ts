@@ -9,6 +9,43 @@ async function signIn(page: any) {
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
 }
+test("local header opens the fleet without carrying the local access token", async ({
+  page,
+  request,
+}) => {
+  const snapshot = await (
+    await request.get("/api/snapshot", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json();
+  await page.route("**/api/snapshot", (route) =>
+    route.fulfill({
+      json: { ...snapshot, fleet_url: "https://fleet.example.com" },
+    }),
+  );
+  let leakedToken = false;
+  await page.route("https://fleet.example.com/**", async (route) => {
+    leakedToken ||=
+      !!route.request().headers().authorization ||
+      route.request().url().includes(token);
+    await route.fulfill({
+      contentType: "text/html",
+      body: "<h1>Fleet dashboard</h1>",
+    });
+  });
+  await signIn(page);
+  const picker = page.getByRole("combobox", { name: "Switch host" });
+  await expect(picker).toHaveValue("local");
+  await picker.selectOption("");
+  await expect(
+    page.getByRole("heading", { name: "Fleet dashboard" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => sessionStorage.getItem("opsdeck.token")),
+  ).toBeNull();
+  expect(leakedToken).toBe(false);
+});
+
 test("real API authentication, hardware, all pages, and unavailable integrations", async ({
   page,
   request,
@@ -35,7 +72,7 @@ test("real API authentication, hardware, all pages, and unavailable integrations
     ).toBeVisible();
   }
   await expect(
-    page.getByText("not configured", { exact: false }).first(),
+    page.getByText("not configured", { exact: true }).first(),
   ).toBeVisible();
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await page.screenshot({

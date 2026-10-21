@@ -1,4 +1,6 @@
 import { PaginatedList } from "../components/PaginatedList";
+import { HostSwitcher } from "../components/HostSwitcher";
+import { FleetApp } from "../features/fleet/FleetApp";
 import {
   SupportOverview,
   ResourceDiagnostics,
@@ -369,7 +371,13 @@ function Chart({
     </div>
   );
 }
-function SignIn({ onSignIn }: { onSignIn: (token: string) => void }) {
+function SignIn({
+  onSignIn,
+  central = false,
+}: {
+  onSignIn: (token: string) => void;
+  central?: boolean;
+}) {
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -423,7 +431,10 @@ function SignIn({ onSignIn }: { onSignIn: (token: string) => void }) {
           {busy ? "Connecting…" : "Connect to OpsDeck"}
           <ChevronRight size={16} />
         </button>
-        <small>Single-host monitoring · Credentials stay on the server</small>
+        <small>
+          {central ? "Fleet monitoring" : "Single-host monitoring"} ·
+          Credentials stay on the server
+        </small>
       </form>
     </main>
   );
@@ -771,10 +782,26 @@ function App() {
       </aside>
       <div className="main">
         <header className="topbar">
-          <span>
-            <Server size={15} />
-            {host?.hostname || "Single-host workspace"}
-          </span>
+          <HostSwitcher
+            hosts={[
+              {
+                id: "local",
+                name: host?.hostname || "This host",
+                cluster: "Local workspace",
+              },
+            ]}
+            value="local"
+            allLabel={
+              snapshot?.fleet_url
+                ? "All hosts (open fleet)"
+                : "All hosts (fleet not configured)"
+            }
+            allDisabled={!safeUrl(snapshot?.fleet_url || undefined)}
+            onChange={(id) => {
+              const url = safeUrl(snapshot?.fleet_url || undefined);
+              if (!id && url) window.location.assign(url);
+            }}
+          />
           <div>
             <ThemeToggle />
             <span className={`live ${error ? "offline" : ""}`}>
@@ -2317,8 +2344,47 @@ function App() {
     </div>
   );
 }
+function Deployment() {
+  const [mode, setMode] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/healthz", { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Server unavailable");
+        return response.json();
+      })
+      .then((data) => setMode(data.mode || "standalone"))
+      .catch((err) => {
+        if (!controller.signal.aborted) setError((err as Error).message);
+      });
+    return () => controller.abort();
+  }, [retry]);
+  if (!mode)
+    return (
+      <main className="login">
+        <p>{error || "Connecting to OpsDeck..."}</p>
+        {error && (
+          <button
+            onClick={() => {
+              setError("");
+              setRetry((value) => value + 1);
+            }}
+          >
+            Retry connection
+          </button>
+        )}
+      </main>
+    );
+  return mode === "central" ? (
+    <FleetApp signIn={(callback) => <SignIn central onSignIn={callback} />} />
+  ) : (
+    <App />
+  );
+}
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <Deployment />
   </React.StrictMode>,
 );

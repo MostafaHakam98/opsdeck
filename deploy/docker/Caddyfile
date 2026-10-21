@@ -1,0 +1,6 @@
+{$OPSDECK_DOMAIN} {
+	request_body {
+		max_size 3MB
+	}
+	reverse_proxy opsdeck:8080
+}

@@ -1,0 +1,12 @@
+# Combine with compose.yaml and compose.host.yaml on each runner host.
+services:
+  opsdeck:
+    env_file: !override
+      - '${OPSDECK_AGENT_ENV_PATH:-.env.agent}'
+    command: [python, -m, backend.agent]
+    environment:
+      OPSDECK_AGENT_SPOOL: /data/agent.sqlite
+      OPSDECK_ACTIONS: 'false'
+      OPSDECK_OPERATIONS: 'false'
+    healthcheck:
+      disable: true

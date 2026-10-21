@@ -1,0 +1,19 @@
+# Add to compose.yaml + compose.central.yaml when a Traefik proxy already exists.
+services:
+  opsdeck:
+    image: '${OPSDECK_IMAGE:-opsdeck:local}'
+    networks:
+      - proxy
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: '${OPSDECK_PROXY_NETWORK:?Set the existing Traefik Docker network}'
+      traefik.http.routers.opsdeck-fleet.rule: 'Host(`${OPSDECK_DOMAIN:?Set the dashboard DNS hostname}`)'
+      traefik.http.routers.opsdeck-fleet.entrypoints: '${OPSDECK_TRAEFIK_ENTRYPOINT:-websecure}'
+      traefik.http.routers.opsdeck-fleet.tls: 'true'
+      traefik.http.routers.opsdeck-fleet.tls.certresolver: '${OPSDECK_TRAEFIK_RESOLVER:-letsencrypt}'
+      traefik.http.routers.opsdeck-fleet.service: opsdeck-fleet
+      traefik.http.services.opsdeck-fleet.loadbalancer.server.port: '8080'
+networks:
+  proxy:
+    external: true
+    name: '${OPSDECK_PROXY_NETWORK:?Set the existing Traefik Docker network}'

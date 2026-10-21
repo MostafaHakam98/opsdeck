@@ -43,6 +43,21 @@ def test_stale_integrations_and_disabled_actions_are_explicit(app):
         assert client.get("/api/history?hours=999", headers=headers).status_code == 422
 
 
+def test_local_snapshot_exposes_only_the_public_fleet_origin(tmp_path):
+    settings = Settings(token=TOKEN, db=str(tmp_path / "local.sqlite"), fleet_url="https://fleet.example.com")
+    with TestClient(create_app(settings, collect=False)) as client:
+        assert client.get("/api/snapshot").status_code == 401
+        snapshot = client.get("/api/snapshot", headers={"Authorization": "Bearer " + TOKEN}).json()
+        assert snapshot["fleet_url"] == "https://fleet.example.com"
+        assert TOKEN not in str(snapshot)
+
+
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "http://fleet.example.com", "https://user:secret@fleet.example.com", "https://fleet.example.com?token=secret", "https://fleet.example.com/path", "https://fleet.example.com:invalid"])
+def test_fleet_origin_rejects_credentials_and_unsafe_navigation(url):
+    with pytest.raises(ValueError, match="OPSDECK_FLEET_URL"):
+        Settings(token=TOKEN, fleet_url=url).validate()
+
+
 def test_history_retention_buckets_and_audit_survival(tmp_path):
     store = Store(str(tmp_path / "history.sqlite"))
     with store.connect() as db:

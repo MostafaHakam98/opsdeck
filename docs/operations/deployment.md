@@ -10,7 +10,7 @@
 | Native foreground | `make run` | Node metrics using the current service account |
 | Native systemd | `make service-install` | Node metrics with a persistent user service |
 
-Every mode uses a single sampler worker. Independent nodes need independent application instances and databases.
+These standalone modes use a single sampler worker. For one hosted dashboard receiving observations from multiple runner networks, use [central fleet mode and outbound agents](fleet.md), including `make central-https-up` on AWS and `make agent-install` on each host.
 
 ## Image and Compose
 
@@ -100,4 +100,4 @@ For an offline Linux x86_64 / Python 3.12 node, build `make bundle` on a develop
 
 The public HTTPS URL can be cloned without an account. Run the app on the node you want to inspect, subject to that cluster's administrator policy. A container scheduled on one node cannot describe every cluster node automatically.
 
-For Kubernetes, use one replica per database, persistent writable storage, explicit secret injection, a probe on `/healthz`, and administrator-reviewed node mounts/PID/network access for host scope. Many managed clusters prohibit Docker sockets or host namespaces; in those environments Docker/systemd telemetry is unavailable and portable mode is not a replacement for cluster metrics. A fleet dashboard, Kubernetes API collector, and DaemonSet integration are not implemented.
+For Kubernetes, use one replica per database, persistent writable storage, explicit secret injection, a probe on `/healthz`, and administrator-reviewed node mounts/PID/network access for host scope. Many managed clusters prohibit Docker sockets or host namespaces; in those environments Docker/systemd telemetry is unavailable and portable mode is not a replacement for cluster metrics. Fleet mode aggregates enrolled host agents; Kubernetes API collection and DaemonSet packaging are not implemented.
