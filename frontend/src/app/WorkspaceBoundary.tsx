@@ -14,8 +14,14 @@ export class WorkspaceBoundary extends Component<
       return (
         <main className="login" role="alert">
           <h1>Workspace could not load</h1>
-          <p>Refresh to reconnect to OpsDeck.</p>
-          <button onClick={() => window.location.reload()}>
+          <p>
+            Part of the app failed to download. Reload to reconnect to OpsDeck.
+          </p>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => window.location.reload()}
+          >
             Reload workspace
           </button>
         </main>

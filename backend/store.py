@@ -53,10 +53,12 @@ class Store:
         with self.connect() as db:
             db.execute("INSERT INTO events(ts,kind,severity,title,detail) VALUES (?,?,?,?,?)", (time.time(), kind, severity, title, detail))
 
-    def events(self, limit=100):
+    def events(self, limit=100, query=""):
+        # instr() keeps the filter a literal substring match; LIKE would treat % and _ as wildcards.
+        where, args = ("WHERE instr(lower(title),?) OR instr(lower(detail),?) ", (query.lower(),) * 2) if query else ("", ())
         with self.connect() as db:
             db.row_factory = sqlite3.Row
-            return [dict(r) for r in db.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))]
+            return [dict(r) for r in db.execute(f"SELECT * FROM events {where}ORDER BY id DESC LIMIT ?", (*args, limit))]
 
     def observe_workers(self, containers, retention):
         now = time.time()

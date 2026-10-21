@@ -47,14 +47,22 @@ export function AgentCredential({
         <h2 id="agent-credential-title">Save this agent credential</h2>
         <p>Shown once. Put it in the private environment file on this host.</p>
         <pre>{configuration}</pre>
+        <ol className="fleet-steps">
+          <li>
+            In the OpsDeck checkout on the runner, save these values in a
+            private <code>.env.agent</code> file and run{" "}
+            <code>chmod 600 .env.agent</code>.
+          </li>
+          <li>
+            Install the agent as a persistent service. It validates the file and
+            starts sending telemetry:
+          </li>
+        </ol>
+        <pre>make agent-install</pre>
         <p>
-          From the OpsDeck checkout on the runner, save these values in{" "}
-          <code>.env.agent</code>, then run:
-        </p>
-        <pre>.venv/bin/python -m backend.agent</pre>
-        <p>
-          For a persistent service, follow <code>docs/operations/fleet.md</code>
-          .
+          To try it in the foreground first, run{" "}
+          <code>.venv/bin/python -m backend.agent</code>. Full steps are in{" "}
+          <code>docs/operations/fleet.md</code>.
         </p>
         <div className="fleet-actions">
           <button

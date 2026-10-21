@@ -110,3 +110,36 @@ Actions default to disabled. An administrator must set `OPSDECK_ACTIONS=true`, t
 4. Confirm the action, then verify state in the next live sample.
 
 The backend rechecks the container and consumes the nonce once. GitLab job containers and the OpsDeck container are excluded. A Docker timeout may occur after the daemon receives the request; inspect the current state before retrying. The Activity page retains request/result records.
+
+## Fleet command center
+
+Central mode opens on **Runner fleet**: every enrolled host in one place. Setup is in [Central server and runner agents](../operations/fleet.md).
+
+**First run.** With no hosts enrolled, the page lists the three steps: enroll the host, save its credential in a private `.env.agent` in the OpsDeck checkout on that host (`chmod 600 .env.agent`), then run `make agent-install`. Check the service with `make agent-status`.
+
+**Summary.** The bar under the title splits hosts by state: online, stale, offline, waiting, maintenance and revoked. Hosts in maintenance count under maintenance, not their connection state. The readouts show hosts online out of the total, average CPU, memory and GPU across online hosts, CI jobs running, and open alerts by severity. With a cluster selected, every figure covers only that cluster.
+
+**Fleet pulse.** Each row is a host and each cell is one time bucket, shaded from idle to saturated: under 20%, 20 to 40%, 40 to 60%, 60 to 80%, 80 to 90%, and 90% and above. The top two steps match the warning and critical thresholds. Pale cells have no samples; they do not mean zero. Switch the metric between CPU, memory and GPU, and the window between 1, 6 and 24 hours (60 buckets each). The right column is the current reading. Hover a cell for its host, time range and value. With the keyboard, Tab to a row, use Left/Right (or Home/End) to read cells, Up/Down to change rows, and Enter to open the host. Rows follow the host search, filters and sort order.
+
+**Needs attention.** Open alerts, critical first:
+
+| Condition | Warning | Critical |
+|---|---|---|
+| Agent contact | Telemetry stale | Agent offline |
+| CPU or memory | At least 80% | At least 90% |
+| I/O pressure (last-minute average) | At least 10% | At least 25% |
+| Collector | Degraded or unavailable | Not used |
+
+Waiting, revoked and maintenance hosts raise no alerts. Offline and stale hosts report the delivery problem rather than their last load. Select an alert to open its host. The list follows the cluster and search filters.
+
+**Fleet capacity.** Average CPU and memory across reporting hosts, with dashed lines for the busiest host in each bucket, and CI jobs running in a separate chart below. Choose 1 hour, 6 hours, 24 hours or 7 days. A cluster selection narrows the chart to that cluster.
+
+**Hosts.** Switch between **Grid** (cards with CPU, memory and GPU bars, a trend line for the pulse metric, CI jobs, last contact and notes) and **Table** (select a column heading to sort; select it again to reverse). The layout and **Group by cluster** choices are remembered in this browser. Search matches host name, hostname, cluster and notes. Status chips filter by state and show counts. **Export CSV** downloads the hosts currently shown with their latest metrics.
+
+**Live updates.** Host states refresh every 10 seconds, the pulse every 30 seconds and capacity history every minute. The indicator in the top bar shows the age of the last successful update. Use its pause button to freeze the page; the choice lasts for this browser tab. Updates stop while the tab is hidden and resume immediately when it is visible again. After a failed request, OpsDeck keeps the last values on screen and retries after 10, 20, 40 and then every 60 seconds.
+
+**Keyboard.** Press Ctrl K (Cmd K on macOS) or `/` to open the command palette, or select **Search or jump to** in the top bar. It opens hosts, clusters, Enroll host, Fleet audit and, with a host selected, each workspace page for that host; it also switches the host layout, pauses updates, exports CSV and signs out. Press `R` to refresh now and `?` to list shortcuts. Esc closes the palette and dialogs.
+
+**Host settings.** On a host's detail page (opened from the fleet, or through **Agent access** in a connected host workspace), **Host settings** changes the name, cluster and notes (up to 500 characters). **Maintenance mode** suppresses the host's alerts and marks it as maintenance; telemetry is still recorded. Each change is recorded in **Fleet audit**. The **Agent access** panel below is the danger zone: type the host name, then **Rotate credential** (shows a new credential once and disconnects the running agent) or **Revoke agent** (stops telemetry; retained observations stay available).
+
+**Fleet audit.** Lists enrollment, credential, settings and maintenance changes. Search runs on the server across titles and details. Filter by kind and severity, show the newest 100, 500 or 1000 events, and export the shown rows as CSV. Times show as relative age with the exact local time below.

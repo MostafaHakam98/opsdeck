@@ -91,7 +91,7 @@ test("header switches across clusters, restores host URLs, and returns to all ho
   ).toBeVisible();
   await picker.selectOption("");
   await expect(
-    page.getByRole("heading", { name: "Your runner fleet", exact: true }),
+    page.getByRole("heading", { name: "Runner fleet", exact: true }),
   ).toBeVisible();
   await expect(page).not.toHaveURL(/node=/);
   await page.getByLabel("Search hosts").fill("does-not-match");
@@ -138,7 +138,7 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
   await page.getByLabel("Access token", { exact: true }).fill(operator);
   await page.getByRole("button", { name: "Connect to OpsDeck" }).click();
   await expect(
-    page.getByRole("heading", { name: "Your runner fleet" }),
+    page.getByRole("heading", { name: "Runner fleet" }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Enroll host", exact: true })
@@ -266,7 +266,7 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
   ).toBeVisible();
   await page.getByLabel("Cluster filter").selectOption("");
   await expect(
-    page.getByRole("heading", { name: "Your runner fleet" }),
+    page.getByRole("heading", { name: "Runner fleet" }),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -287,5 +287,99 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page.getByLabel("Access token", { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("command center shows summary, pulse, alerts, maintenance, and the palette", async ({
+  page,
+  request,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const suffix = randomUUID().slice(0, 8);
+  const headers = { Authorization: `Bearer ${operator}` };
+  const enrollment = await request.post("/api/fleet/nodes", {
+    headers,
+    data: { name: `hot-${suffix}`, cluster: `pulse-${suffix}` },
+  });
+  expect(enrollment.status()).toBe(200);
+  const hot = await enrollment.json();
+  const stamp = Date.now() / 1000;
+  const values = {
+    host: {
+      hostname: `hot-${suffix}.local`,
+      scope: "native",
+      cpu: { percent: 95 },
+      memory: { percent: 40 },
+    },
+    docker: { ci_running: 2 },
+    gpu: [],
+    runner: {},
+    services: [],
+  };
+  expect(
+    (
+      await request.post("/api/agent/telemetry", {
+        headers: { Authorization: `Bearer ${hot.token}` },
+        data: {
+          schema_version: 1,
+          sample_id: randomUUID(),
+          collected_at: stamp,
+          sources: Object.fromEntries(
+            Object.entries(values).map(([key, data]) => [
+              key,
+              { status: "healthy", updated_at: stamp, data },
+            ]),
+          ),
+        },
+      })
+    ).status(),
+  ).toBe(200);
+  await page.goto("/");
+  await page.getByLabel("Access token", { exact: true }).fill(operator);
+  await page.getByRole("button", { name: "Connect to OpsDeck" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Runner fleet", exact: true }),
+  ).toBeVisible();
+  const summary = page.getByRole("region", { name: "Fleet summary" });
+  await expect(summary).toContainText("Hosts online");
+  await expect(summary).toContainText("Average CPU");
+  await expect(summary).toContainText("Open alerts");
+  await page.getByLabel("Search hosts").fill(hot.name);
+  const pulseRow = page.getByRole("button", {
+    name: new RegExp(`^${hot.name}, CPU now 95%`),
+  });
+  await expect(pulseRow).toBeVisible();
+  await expect(pulseRow).toHaveAccessibleName(/peak 95% in the last hour$/);
+  const attention = page.getByRole("region", { name: "Needs attention" });
+  const hotAlert = attention.getByRole("button", {
+    name: new RegExp(hot.name),
+  });
+  await expect(hotAlert.first()).toBeVisible();
+  await expect(hotAlert.first()).toContainText("Critical");
+  await page.getByLabel("Search hosts").fill("");
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await expect(palette).toBeVisible();
+  await page.keyboard.type(`Open ${hot.name}`);
+  await page.keyboard.press("Enter");
+  await expect(palette).toBeHidden();
+  await expect(
+    page.getByRole("heading", { name: hot.name, exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`node=${hot.id}`));
+  await expect(page.getByRole("list", { name: "Host alerts" })).toBeVisible();
+  await page.getByRole("switch", { name: /Maintenance mode/ }).check();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Settings saved.")).toBeVisible();
+  await expect(page.getByText("This host is in maintenance.")).toBeVisible();
+  await page.getByRole("button", { name: "Back to hosts" }).click();
+  await page.getByLabel("Search hosts").fill(hot.name);
+  await expect(attention).toContainText("All hosts within thresholds");
+  await expect(attention).not.toContainText(hot.name);
+  await expect(page.locator(".host-card", { hasText: hot.name })).toContainText(
+    "maintenance",
+  );
   expect(errors).toEqual([]);
 });

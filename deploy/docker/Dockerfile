@@ -22,6 +22,9 @@ COPY --chown=opsdeck:opsdeck backend/ backend/
 COPY --chown=opsdeck:opsdeck deploy/ deploy/
 COPY --chown=opsdeck:opsdeck scripts/ scripts/
 COPY --from=frontend /build/frontend/dist/ frontend/dist/
+# Build label for /healthz and opsdeck_build_info; make docker-build passes the commit.
+ARG SOURCE_COMMIT=dev
+ENV OPSDECK_VERSION=${SOURCE_COMMIT}
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OPSDECK_BIND=0.0.0.0 OPSDECK_PORT=8080 \
     OPSDECK_DB=/data/opsdeck.sqlite OPSDECK_SCOPE=container OPSDECK_ENV_FILE=/data/config.env
 USER 12001:12001

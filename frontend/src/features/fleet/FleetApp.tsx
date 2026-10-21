@@ -1,23 +1,51 @@
-import React, { lazy, Suspense, useEffect, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import {
   Activity,
   ArrowLeft,
-  ChevronRight,
+  Download,
+  Keyboard,
+  LayoutGrid,
   LogOut,
   Network,
+  Pause,
+  Play,
   Plus,
   RefreshCw,
   Search,
   Server,
   ShieldCheck,
+  Table2,
 } from "lucide-react";
-import { api, pct } from "../../lib/api";
+import { api, download } from "../../lib/api";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { HostSwitcher } from "../../components/HostSwitcher";
-import { age } from "./format";
-import { Status, Table, Section } from "./FleetComponents";
+import {
+  CommandPalette,
+  openCommandPalette,
+  type Command,
+} from "../../components/CommandPalette";
+import { LiveIndicator } from "../../components/LiveIndicator";
+import { ShortcutHelp, openShortcutHelp } from "../../components/ShortcutHelp";
+import { useHotkey } from "../../lib/useHotkey";
 import { AgentCredential } from "./AgentCredential";
-import type { Credential } from "./types";
+import { FleetOverview } from "./FleetOverview";
+import { FleetAudit } from "./FleetAudit";
+import { DangerZone, HostSettings } from "./HostSettings";
+import type { HostLayout } from "./HostsView";
+import {
+  filterAlerts,
+  filterNodes,
+  fileStamp,
+  fleetAlerts,
+  fleetSummary,
+  hostsCsv,
+  readStored,
+  sortNodes,
+  writeStored,
+  type SortDirection,
+  type SortKey,
+} from "./fleetModel";
+import type { Credential, PulseMetric } from "./types";
 import "./fleet.css";
 import { hostPages, hostPageGroups, hostPageId } from "../../app/navigation";
 import { AppSidebar } from "../../components/AppSidebar";
@@ -33,6 +61,20 @@ const NodeDetail = lazy(() =>
   import("./NodeDetail").then((module) => ({ default: module.NodeDetail })),
 );
 
+const local = () => window.localStorage;
+const session = () => window.sessionStorage;
+const LAYOUT_KEY = "opsdeck.fleet.layout";
+const GROUP_KEY = "opsdeck.fleet.grouped";
+const PAUSE_KEY = "opsdeck.fleet.paused";
+const NUMERIC_SORTS: SortKey[] = ["cpu", "memory", "gpu", "ci"];
+const SHORTCUTS = [
+  { keys: ["Ctrl", "K"], label: "Open the command palette" },
+  { keys: ["/"], label: "Open the command palette" },
+  { keys: ["R"], label: "Refresh fleet data now" },
+  { keys: ["?"], label: "Show keyboard shortcuts" },
+  { keys: ["Esc"], label: "Close the palette or a dialog" },
+];
+
 export function FleetApp({
   signIn,
 }: {
@@ -43,7 +85,7 @@ export function FleetApp({
   );
   const [cluster, setCluster] = useState("");
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("");
+  const [stateFilter, setStateFilter] = useState("");
   const [selected, setSelected] = useState(
     () => new URLSearchParams(window.location.search).get("node") || "",
   );
@@ -62,8 +104,58 @@ export function FleetApp({
   const [name, setName] = useState("");
   const [newCluster, setNewCluster] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [paused, setPaused] = useState(
+    () => readStored(session, PAUSE_KEY, "") === "1",
+  );
+  const [layout, setLayout] = useState<HostLayout>(() =>
+    readStored(local, LAYOUT_KEY, "grid") === "table" ? "table" : "grid",
+  );
+  const [grouped, setGrouped] = useState(
+    () => readStored(local, GROUP_KEY, "") === "1",
+  );
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [pulseMetric, setPulseMetric] = useState<PulseMetric>("cpu");
+  const [pulseMinutes, setPulseMinutes] = useState(60);
+  const [fleetHours, setFleetHours] = useState(1);
+  const [auditQuery, setAuditQuery] = useState("");
+  const [auditLimit, setAuditLimit] = useState(100);
+  const data = useFleetData({
+    token,
+    selected,
+    hours,
+    refresh,
+    view,
+    paused,
+    pulseMinutes,
+    fleetHours,
+    cluster,
+    auditQuery,
+    auditLimit,
+  });
   const { fleet, detail, history, events, error, clearHost, clearHistory } =
-    useFleetData(token, selected, hours, refresh, view);
+    data;
+  const nodes = fleet?.nodes || [];
+  const clusters = [...new Set(nodes.map((n) => n.cluster))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const scoped = nodes.filter((n) => !cluster || n.cluster === cluster);
+  const filtered = sortNodes(
+    filterNodes(nodes, { query, state: stateFilter, cluster }),
+    sortKey,
+    sortDirection,
+  );
+  const alerts = fleetAlerts(fleet);
+  const summary = fleetSummary(fleet, cluster);
+  const workspaceOpen =
+    view === "fleet" &&
+    !!selected &&
+    (!!detail?.workspace_connected || workspaceRequested);
+  const refreshNow = useCallback(() => setRefresh((v) => v + 1), []);
+  useHotkey("r", () => {
+    // The one-time credential dialog owns the keyboard until it is saved.
+    if (token && !workspaceOpen && !credential) refreshNow();
+  });
   useEffect(() => {
     function restoreHost() {
       setSelected(
@@ -127,7 +219,7 @@ export function FleetApp({
   }
   function switchHost(id: string) {
     setQuery("");
-    setStatus("");
+    setStateFilter("");
     setCluster("");
     if (id) selectNode(id);
     else navigate("fleet", "");
@@ -145,6 +237,40 @@ export function FleetApp({
     sessionStorage.removeItem("opsdeck.token");
     setToken("");
     setCredential(null);
+  }
+  function togglePause() {
+    setPaused((value) => {
+      writeStored(session, PAUSE_KEY, value ? "" : "1");
+      return !value;
+    });
+  }
+  function changeLayout(next: HostLayout) {
+    setLayout(next);
+    writeStored(local, LAYOUT_KEY, next);
+  }
+  function changeGrouped(next: boolean) {
+    setGrouped(next);
+    writeStored(local, GROUP_KEY, next ? "1" : "");
+  }
+  function sortBy(key: SortKey, direction?: SortDirection) {
+    setSortDirection(
+      direction ||
+        (key === sortKey
+          ? sortDirection === "asc"
+            ? "desc"
+            : "asc"
+          : NUMERIC_SORTS.includes(key)
+            ? "desc"
+            : "asc"),
+    );
+    setSortKey(key);
+  }
+  function exportHosts() {
+    download(
+      `opsdeck-hosts-${fileStamp()}.csv`,
+      hostsCsv(filtered),
+      "text/csv",
+    );
   }
   async function mutate(path: string, values: unknown, reveal: boolean) {
     setBusy(true);
@@ -167,22 +293,7 @@ export function FleetApp({
       sessionStorage.setItem("opsdeck.token", value);
       setToken(value);
     });
-  const nodes = fleet?.nodes || [];
-  const clusters = [...new Set(nodes.map((n) => n.cluster))];
-  const scoped = nodes.filter((n) => !cluster || n.cluster === cluster);
-  const filtered = scoped.filter(
-    (n) =>
-      (!status || n.status === status) &&
-      `${n.name} ${n.hostname || ""} ${n.cluster}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
-  );
-  const online = scoped.filter((n) => n.status === "online").length;
-  if (
-    view === "fleet" &&
-    selected &&
-    (detail?.workspace_connected || workspaceRequested)
-  ) {
+  if (workspaceOpen) {
     return (
       <HostApiProvider prefix={`fleet/nodes/${selected}/workspace/`}>
         <Suspense
@@ -209,6 +320,104 @@ export function FleetApp({
       </HostApiProvider>
     );
   }
+  const selectedNode = nodes.find((n) => n.id === selected);
+  const commands: Command[] = [
+    {
+      id: "fleet",
+      label: "Fleet overview",
+      group: "Fleet",
+      icon: Network,
+      run: () => navigate("fleet", ""),
+    },
+    {
+      id: "enroll",
+      label: "Enroll host",
+      group: "Fleet",
+      icon: Plus,
+      run: () => navigate("enroll"),
+    },
+    {
+      id: "audit",
+      label: "Fleet audit",
+      group: "Fleet",
+      icon: Activity,
+      run: () => navigate("audit"),
+    },
+    ...nodes.map((n) => ({
+      id: `host:${n.id}`,
+      label: `Open ${n.name}`,
+      hint: n.cluster,
+      group: "Hosts",
+      icon: Server,
+      keywords: `${n.hostname || ""} ${n.cluster} ${n.status} ${n.notes || ""}`,
+      run: () => switchHost(n.id),
+    })),
+    ...clusters.map((c) => ({
+      id: `cluster:${c}`,
+      label: `Show cluster ${c}`,
+      hint: `${nodes.filter((n) => n.cluster === c).length} hosts`,
+      group: "Clusters",
+      icon: Network,
+      run: () => navigate("fleet", c),
+    })),
+    ...(selectedNode
+      ? hostPages.map((p) => ({
+          id: `page:${p.id}`,
+          label: `${p.title} on ${selectedNode.name}`,
+          hint: p.group,
+          group: "Host workspace",
+          icon: p.icon,
+          keywords: p.description,
+          run: () => openSection(p.id),
+        }))
+      : []),
+    {
+      id: "layout",
+      label:
+        layout === "grid" ? "Show hosts as a table" : "Show hosts as a grid",
+      group: "View",
+      icon: layout === "grid" ? Table2 : LayoutGrid,
+      run: () => changeLayout(layout === "grid" ? "table" : "grid"),
+    },
+    {
+      id: "pause",
+      label: paused ? "Resume live updates" : "Pause live updates",
+      group: "View",
+      icon: paused ? Play : Pause,
+      run: togglePause,
+    },
+    {
+      id: "refresh",
+      label: "Refresh now",
+      hint: "R",
+      group: "View",
+      icon: RefreshCw,
+      run: refreshNow,
+    },
+    {
+      id: "export",
+      label: "Export hosts as CSV",
+      hint: `${filtered.length} hosts`,
+      group: "View",
+      icon: Download,
+      run: exportHosts,
+    },
+    {
+      id: "shortcuts",
+      label: "Keyboard shortcuts",
+      hint: "?",
+      group: "View",
+      icon: Keyboard,
+      run: openShortcutHelp,
+    },
+    {
+      id: "signout",
+      label: "Sign out",
+      group: "Account",
+      icon: LogOut,
+      run: signOut,
+    },
+  ];
   return (
     <div className="workspace">
       <AppSidebar
@@ -223,6 +432,7 @@ export function FleetApp({
             </p>
             <small>
               History retained for {fleet?.retention_days ?? 30} days
+              {fleet?.version ? `. Version ${fleet.version}` : ""}
             </small>
           </div>
         }
@@ -236,6 +446,7 @@ export function FleetApp({
                 icon: Network,
                 active: view === "fleet" && !selected && !cluster,
                 count: nodes.length,
+                alert: alerts.some((a) => a.severity === "critical"),
                 onClick: () => navigate("fleet", ""),
               },
               {
@@ -288,16 +499,36 @@ export function FleetApp({
             allLabel={`All hosts (${nodes.length})`}
             loading={!fleet}
           />
-          <div>
+          <button
+            type="button"
+            className="fleet-jump"
+            aria-label="Search or jump to"
+            aria-keyshortcuts="Control+K"
+            onClick={openCommandPalette}
+          >
+            <Search size={15} aria-hidden="true" />
+            <span>Search or jump to</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+          <div className="fleet-topbar-tools">
+            <LiveIndicator
+              updatedAt={data.updatedAt}
+              error={error || undefined}
+              paused={paused}
+              onTogglePause={togglePause}
+            />
             <button
+              type="button"
+              className="fleet-icon-button"
               aria-label="Refresh fleet"
-              onClick={() => setRefresh((v) => v + 1)}
+              title="Refresh now (R)"
+              onClick={refreshNow}
             >
               <RefreshCw size={16} />
             </button>
             <ThemeToggle />
             <button
-              className="fleet-mobile-signout"
+              className="fleet-mobile-signout fleet-icon-button"
               aria-label="Sign out"
               onClick={signOut}
             >
@@ -308,7 +539,8 @@ export function FleetApp({
         <main className="fleet-main">
           {error && (
             <div className="fleet-warning" role="alert">
-              {error} Retained values may be out of date.
+              {error} Retained values may be out of date; OpsDeck keeps
+              retrying.
             </div>
           )}
           {actionError && (
@@ -325,139 +557,59 @@ export function FleetApp({
             </p>
           )}
           {view === "fleet" && !selected && (
-            <>
-              <div className="fleet-title">
-                <div>
-                  <h1>{cluster || "Your runner fleet"}</h1>
-                  <p>Capacity and health across your runner networks.</p>
-                </div>
-                <button className="primary" onClick={() => navigate("enroll")}>
-                  <Plus size={16} />
-                  Enroll host
-                </button>
-              </div>
-              <div className="fleet-summary">
-                <strong>
-                  {online}
-                  <span> online</span>
-                </strong>
-                <span>
-                  {scoped.length - online} waiting, stale, offline, or revoked
-                </span>
-                <span>
-                  {cluster
-                    ? "1 cluster"
-                    : `${clusters.length} ${clusters.length === 1 ? "cluster" : "clusters"}`}
-                </span>
-              </div>
-              <div className="fleet-filter">
-                <label className="fleet-cluster-filter">
-                  Cluster
-                  <select
-                    aria-label="Cluster filter"
-                    value={cluster}
-                    onChange={(event) => navigate("fleet", event.target.value)}
-                  >
-                    <option value="">All clusters</option>
-                    {clusters.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="fleet-search">
-                  <Search size={17} />
-                  <input
-                    aria-label="Search hosts"
-                    placeholder="Search hosts or clusters"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Status{" "}
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                  >
-                    <option value="">All statuses</option>
-                    {["online", "waiting", "stale", "offline", "revoked"].map(
-                      (s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </label>
-              </div>
-              {!fleet ? (
-                <p className="fleet-empty">Connecting to the fleet server...</p>
-              ) : !nodes.length ? (
-                <div className="fleet-onboarding">
-                  <Network size={44} />
-                  <h2>Connect your first runner host</h2>
-                  <p>
-                    Enroll a host, then run its agent on the runner network. Its
-                    health and resource usage will appear here.
-                  </p>
-                  <button
-                    className="primary"
-                    onClick={() => navigate("enroll")}
-                  >
-                    Enroll host
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              ) : (
-                <Section
-                  title={`${filtered.length} ${filtered.length === 1 ? "host" : "hosts"}`}
-                >
-                  <Table
-                    headings={[
-                      "Host",
-                      "Cluster",
-                      "Connection",
-                      "CPU",
-                      "Memory",
-                      "CI workers",
-                      "Last observation",
-                    ]}
-                  >
-                    {filtered.map((n) => (
-                      <tr key={n.id}>
-                        <td>
-                          <button
-                            className="fleet-host-link"
-                            onClick={() => selectNode(n.id)}
-                          >
-                            {n.name}
-                            <ChevronRight size={14} />
-                          </button>
-                          <small>{n.hostname || "Awaiting agent"}</small>
-                        </td>
-                        <td>{n.cluster}</td>
-                        <td>
-                          <Status value={n.status} />
-                        </td>
-                        <td>{pct(n.metrics.cpu)}</td>
-                        <td>{pct(n.metrics.memory)}</td>
-                        <td>{n.metrics.ci_running ?? "Unavailable"}</td>
-                        <td>{age(n.age_seconds)}</td>
-                      </tr>
-                    ))}
-                  </Table>
-                  {!filtered.length && (
-                    <p className="fleet-empty">No hosts match these filters.</p>
-                  )}
-                </Section>
-              )}
-            </>
+            <FleetOverview
+              loaded={!!fleet}
+              title={cluster || "Runner fleet"}
+              scoped={scoped}
+              summary={summary}
+              alerts={filterAlerts(alerts, cluster, query)}
+              pulse={data.pulse}
+              pulseError={data.pulseError}
+              pulseMetric={pulseMetric}
+              pulseMinutes={pulseMinutes}
+              onPulseMetric={setPulseMetric}
+              onPulseMinutes={setPulseMinutes}
+              history={data.fleetHistory}
+              historyError={data.fleetHistoryError}
+              historyHours={fleetHours}
+              onHistoryHours={(value) => {
+                setFleetHours(value);
+                data.clearFleetHistory();
+              }}
+              onOpen={selectNode}
+              onEnroll={() => navigate("enroll")}
+              hosts={{
+                nodes: filtered,
+                scoped,
+                allCount: nodes.length,
+                clusters,
+                query,
+                onQuery: setQuery,
+                state: stateFilter,
+                onState: setStateFilter,
+                cluster,
+                onCluster: (value) => navigate("fleet", value),
+                layout,
+                onLayout: changeLayout,
+                grouped,
+                onGrouped: changeGrouped,
+                sortKey,
+                sortDirection,
+                onSort: sortBy,
+                pulse: data.pulse,
+                pulseMetric,
+                serverTime: fleet?.server_time ?? null,
+                onOpen: selectNode,
+                onExport: exportHosts,
+              }}
+            />
           )}
           {(view === "fleet" || view === "agent") && selected && (
             <>
-              <button className="fleet-back" onClick={() => navigate("fleet")}>
+              <button
+                className="fleet-back secondary"
+                onClick={() => navigate("fleet")}
+              >
                 <ArrowLeft size={16} />
                 Back to hosts
               </button>
@@ -472,6 +624,7 @@ export function FleetApp({
                     detail={detail}
                     history={history}
                     hours={hours}
+                    alerts={alerts.filter((a) => a.node_id === selected)}
                     onHours={(v) => {
                       setHours(v);
                       clearHistory();
@@ -482,43 +635,27 @@ export function FleetApp({
                 <p className="fleet-empty">Loading host observations...</p>
               )}
               {detail && (
-                <Section title="Agent access">
-                  <p className="fleet-context">
-                    Rotate replaces this host's credential. Revoke stops it from
-                    sending telemetry. Retained observations remain available.
-                  </p>
-                  <label>
-                    Type the host name to confirm
-                    <input
-                      aria-label="Confirm host name"
-                      value={confirm}
-                      onChange={(e) => setConfirm(e.target.value)}
-                      placeholder={detail.node.name}
-                    />
-                  </label>
-                  <div className="fleet-actions">
-                    <button
-                      disabled={busy || confirm !== detail.node.name}
-                      onClick={() =>
-                        void mutate(`fleet/nodes/${selected}/rotate`, {}, true)
-                      }
-                    >
-                      Rotate credential
-                    </button>
-                    <button
-                      disabled={
-                        busy ||
-                        confirm !== detail.node.name ||
-                        detail.node.status === "revoked"
-                      }
-                      onClick={() =>
-                        void mutate(`fleet/nodes/${selected}/revoke`, {}, false)
-                      }
-                    >
-                      Revoke agent
-                    </button>
-                  </div>
-                </Section>
+                <div className="fleet-admin">
+                  <HostSettings
+                    key={detail.node.id}
+                    node={detail.node}
+                    token={token}
+                    clusters={clusters}
+                    onSaved={refreshNow}
+                  />
+                  <DangerZone
+                    node={detail.node}
+                    confirm={confirm}
+                    onConfirm={setConfirm}
+                    busy={busy}
+                    onRotate={() =>
+                      void mutate(`fleet/nodes/${selected}/rotate`, {}, true)
+                    }
+                    onRevoke={() =>
+                      void mutate(`fleet/nodes/${selected}/revoke`, {}, false)
+                    }
+                  />
+                </div>
               )}
             </>
           )}
@@ -558,14 +695,22 @@ export function FleetApp({
                   <input
                     required
                     maxLength={120}
+                    list="fleet-enroll-clusters"
                     value={newCluster}
                     onChange={(e) => setNewCluster(e.target.value)}
                     placeholder="Cairo build cluster"
                   />
+                  <datalist id="fleet-enroll-clusters">
+                    {clusters.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
                 </label>
                 <p>
                   The agent needs outbound HTTPS access to this server. Its
-                  credential is limited to sending this host's telemetry.
+                  credential is limited to sending this host's telemetry. Next,
+                  you save the credential in <code>.env.agent</code> on the host
+                  and run <code>make agent-install</code>.
                 </p>
                 <button className="primary" disabled={busy || !!credential}>
                   {busy ? "Enrolling..." : "Create agent credential"}
@@ -574,31 +719,20 @@ export function FleetApp({
             </>
           )}
           {view === "audit" && (
-            <>
-              <div className="fleet-title">
-                <div>
-                  <h1>Activity & audit</h1>
-                  <p>Agent enrollment and access changes.</p>
-                </div>
-              </div>
-              <Section title="Recent events">
-                <Table headings={["Time", "Event", "Details"]}>
-                  {events.map((e) => (
-                    <tr key={e.id}>
-                      <td>{new Date(e.ts * 1000).toLocaleString()}</td>
-                      <td>{e.title}</td>
-                      <td>{e.detail}</td>
-                    </tr>
-                  ))}
-                </Table>
-                {!events.length && (
-                  <p className="fleet-empty">No access changes recorded yet.</p>
-                )}
-              </Section>
-            </>
+            <FleetAudit
+              events={events}
+              query={auditQuery}
+              onQuery={setAuditQuery}
+              limit={auditLimit}
+              onLimit={setAuditLimit}
+              serverTime={fleet?.server_time ?? null}
+            />
           )}
         </main>
       </div>
+      {/* Keep overlays and their "Sign out" away from the one-time credential. */}
+      {!credential && <CommandPalette commands={commands} />}
+      {!credential && <ShortcutHelp shortcuts={SHORTCUTS} />}
       {credential && (
         <AgentCredential
           key={credential.token}

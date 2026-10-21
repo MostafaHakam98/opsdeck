@@ -12,22 +12,36 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 from backend.store import Store
+from backend.web import HashedAssets, SelectiveGZip
 from backend.workspace import WorkspaceRelay
 
 MAX_TELEMETRY_BYTES = 2 * 1024 * 1024
 SOURCE_NAMES = ("host", "docker", "gpu", "runner", "services")
 METRICS = ("cpu", "memory", "gpu", "rx", "tx", "io_pressure", "ci_running")
+PULSE = ("cpu", "memory", "gpu")
+NODE_COLUMNS = "id,name,cluster,created_at,revoked,last_seen,collected_at,summary,notes,maintenance"
+# (metric, title, label, critical, warning); all three are percentages.
+ALERT_METRICS = (("cpu", "High CPU load", "CPU", 90, 80), ("memory", "High memory use", "Memory", 90, 80),
+                 ("io_pressure", "High I/O pressure", "I/O pressure (avg60)", 25, 10))
+SOURCE_LABELS = {"host": "Host", "docker": "Docker", "gpu": "GPU", "runner": "Runner", "services": "Services"}
 
 
 class NodeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=120)
     cluster: str = Field(min_length=1, max_length=120)
+
+
+class NodeSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    cluster: str | None = Field(default=None, min_length=1, max_length=120)
+    notes: str | None = Field(default=None, max_length=500)
+    maintenance: bool | None = None
 
 
 class TelemetrySource(BaseModel):
@@ -76,6 +90,84 @@ def metric_values(sources):
             "ci_running": numeric(source_data(sources, "docker", {}).get("ci_running"))}
 
 
+def duration(seconds):
+    seconds = max(0, int(seconds))
+    return f"{seconds} s" if seconds < 120 else f"{seconds // 60} min" if seconds < 7200 else f"{seconds // 3600} h"
+
+
+def fleet_alerts(nodes, now=None):
+    """Current conditions only; maintenance, revoked, and waiting hosts are silent."""
+    now = time.time() if now is None else now
+    alerts = []
+    for node in nodes:
+        if node["maintenance"] or node["status"] in ("revoked", "waiting"):
+            continue
+        def add(kind, severity, title, detail, value=None, key=None):
+            alerts.append({"key": node["id"] + ":" + (key or kind), "node_id": node["id"], "node_name": node["name"], "cluster": node["cluster"],
+                           "severity": severity, "kind": kind, "title": title, "detail": detail, "value": value})
+        # Readings from an offline or stale host are old; report the delivery problem, not old load.
+        if node["status"] == "offline":
+            silent = now - node["last_seen"] if node.get("last_seen") is not None else None
+            add("offline", "critical", "Agent offline", (f"No agent contact for {duration(silent)}. " if silent is not None else "")
+                + "Check the agent service and outbound HTTPS from the host.", round(silent) if silent is not None else None)
+            continue
+        if node["status"] == "stale":
+            age = node.get("age_seconds")
+            add("stale", "warning", "Telemetry stale", (f"Latest sample is {duration(age)} old. " if age is not None else "No sample stored yet. ")
+                + "The agent is connected; check its collectors and the host clock.", round(age) if age is not None else None)
+            continue
+        for key, title, label, critical, warning in ALERT_METRICS:
+            value = node["metrics"].get(key)
+            if value is not None and value >= warning:
+                severity, limit = ("critical", critical) if value >= critical else ("warning", warning)
+                add(key, severity, title, f"{label} at {value:.0f}%, {severity} threshold {limit}%.", value)
+        for name, status in node["source_status"].items():
+            if status in ("degraded", "unavailable"):
+                label = SOURCE_LABELS.get(name, name)
+                add("source", "warning", f"{label} source {status}", f"The {label} collector reported {status}. Open the host to read the source message.", key="source:" + name)
+    alerts.sort(key=lambda a: (a["severity"] != "critical", a["node_name"].lower(), a["node_id"]))
+    return alerts
+
+
+def fleet_summary(nodes, alerts):
+    online = [n for n in nodes if n["status"] == "online"]
+    def values(key):
+        return [n["metrics"][key] for n in online if n["metrics"].get(key) is not None]
+    def mean(key):
+        found = values(key)
+        return round(sum(found) / len(found), 1) if found else None
+    running = values("ci_running")
+    return {"hosts": len(nodes), **{status: sum(n["status"] == status for n in nodes) for status in ("online", "waiting", "stale", "offline", "revoked")},
+            "maintenance": sum(bool(n["maintenance"]) for n in nodes), "clusters": len({n["cluster"] for n in nodes}),
+            "ci_running": round(sum(running), 1) if running else None, "avg_cpu": mean("cpu"), "avg_memory": mean("memory"), "avg_gpu": mean("gpu"),
+            "alerts_critical": sum(a["severity"] == "critical" for a in alerts), "alerts_warning": sum(a["severity"] == "warning" for a in alerts)}
+
+
+def label_value(value):
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def prometheus(nodes, alerts, version):
+    gauges = (("node_up", "1 when the host agent is online, 0 otherwise", lambda n: int(n["status"] == "online")),
+              ("node_cpu_percent", "Latest host CPU utilization", lambda n: n["metrics"].get("cpu")),
+              ("node_memory_percent", "Latest host memory utilization", lambda n: n["metrics"].get("memory")),
+              ("node_gpu_percent", "Latest utilization of the first GPU", lambda n: n["metrics"].get("gpu")),
+              ("node_ci_running", "CI job containers running", lambda n: n["metrics"].get("ci_running")),
+              ("node_age_seconds", "Seconds since the latest sample was collected", lambda n: n["age_seconds"]),
+              ("node_maintenance", "1 while the host is in maintenance", lambda n: int(n["maintenance"])))
+    lines = []
+    for name, description, read in gauges:
+        lines += [f"# HELP opsdeck_{name} {description}", f"# TYPE opsdeck_{name} gauge"]
+        for node in nodes:
+            value = read(node)
+            if value is not None:
+                lines.append(f'opsdeck_{name}{{node="{label_value(node["name"])}",cluster="{label_value(node["cluster"])}",node_id="{node["id"]}"}} {value}')
+    lines += ["# HELP opsdeck_fleet_alerts Active fleet alerts", "# TYPE opsdeck_fleet_alerts gauge"]
+    lines += [f'opsdeck_fleet_alerts{{severity="{severity}"}} {sum(a["severity"] == severity for a in alerts)}' for severity in ("critical", "warning")]
+    lines += ["# HELP opsdeck_build_info OpsDeck build", "# TYPE opsdeck_build_info gauge", f'opsdeck_build_info{{version="{label_value(version)}"}} 1']
+    return "\n".join(lines) + "\n"
+
+
 class Fleet(Store):
     def __init__(self, path):
         super().__init__(path)
@@ -84,6 +176,14 @@ class Fleet(Store):
             db.execute("CREATE TABLE IF NOT EXISTS fleet_samples (node_id TEXT NOT NULL, sample_id TEXT NOT NULL, ts REAL NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(node_id,sample_id))")
             db.execute("CREATE INDEX IF NOT EXISTS fleet_sample_time ON fleet_samples(node_id,ts)")
             db.execute("CREATE INDEX IF NOT EXISTS fleet_retention ON fleet_samples(ts)")
+            # Additive, defaulted columns: the previous release still reads and writes this table.
+            # Check and alter under one write lock so concurrent starts cannot both add a column.
+            db.execute("BEGIN IMMEDIATE")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(fleet_nodes)")}
+            if "notes" not in columns:
+                db.execute("ALTER TABLE fleet_nodes ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+            if "maintenance" not in columns:
+                db.execute("ALTER TABLE fleet_nodes ADD COLUMN maintenance INTEGER NOT NULL DEFAULT 0")
 
     def enroll(self, name, cluster):
         identifier, secret = str(uuid4()), secrets.token_urlsafe(32)
@@ -163,11 +263,12 @@ class Fleet(Store):
             db.execute("UPDATE fleet_nodes SET last_seen=? WHERE id=?", (now, identifier))
         return {"accepted": True, "duplicate": not bool(changed.rowcount), "server_time": now}
 
-    def nodes(self, interval):
+    def nodes(self, interval, identifier=None):
         now = time.time()
         with self.connect() as db:
             db.row_factory = sqlite3.Row
-            rows = db.execute("SELECT id,name,cluster,created_at,revoked,last_seen,collected_at,summary FROM fleet_nodes ORDER BY cluster,name,id").fetchall()
+            rows = db.execute(f"SELECT {NODE_COLUMNS} FROM fleet_nodes" + (" WHERE id=?" if identifier else "") + " ORDER BY cluster,name,id",
+                              (identifier,) if identifier else ()).fetchall()
         result = []
         for row in rows:
             value = dict(row)
@@ -182,13 +283,38 @@ class Fleet(Store):
             value["source_status"] = summary.get("source_status", {})
             value["hostname"] = summary.get("hostname")
             value["scope"] = summary.get("scope")
+            value["maintenance"] = bool(value["maintenance"])
             result.append(value)
         return result
 
-    def snapshot(self, identifier, interval):
-        node = next((n for n in self.nodes(interval) if n["id"] == identifier), None)
-        if node is None:
+    def node(self, identifier, interval):
+        found = self.nodes(interval, identifier)
+        if not found:
             raise HTTPException(404, "Node not found")
+        return found[0]
+
+    def configure(self, identifier, changes, interval):
+        """Name, cluster, notes, and maintenance only; the agent credential is never touched."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT name,cluster,notes,maintenance FROM fleet_nodes WHERE id=?", (identifier,)).fetchone()
+            if not row:
+                raise HTTPException(404, "Node not found")
+            current = {"name": row[0], "cluster": row[1], "notes": row[2], "maintenance": bool(row[3])}
+            changed = {key: value for key, value in changes.items() if value is not None and value != current[key]}
+            if changed:
+                db.execute("UPDATE fleet_nodes SET " + ",".join(key + "=?" for key in changed) + " WHERE id=?",
+                           (*(int(v) if k == "maintenance" else v for k, v in changed.items()), identifier))
+                name = changed.get("name", current["name"])
+                fields = [f"name (was {current['name']})" if key == "name" else key for key in changed if key != "maintenance"]
+                if fields:
+                    self._audit(db, "Host settings changed", name + ": " + ", ".join(fields))
+                if "maintenance" in changed:
+                    self._audit(db, "Maintenance started" if changed["maintenance"] else "Maintenance ended", name + " in " + changed.get("cluster", current["cluster"]))
+        return self.node(identifier, interval)
+
+    def snapshot(self, identifier, interval):
+        node = self.node(identifier, interval)
         with self.connect() as db:
             row = db.execute("SELECT snapshot FROM fleet_nodes WHERE id=?", (identifier,)).fetchone()
         now = time.time()
@@ -209,6 +335,41 @@ class Fleet(Store):
                 raise HTTPException(404, "Node not found")
             db.row_factory = sqlite3.Row
             rows = db.execute(f"SELECT MAX(ts) AS ts,{columns} FROM fleet_samples WHERE node_id=? AND ts>=? AND ts<=? GROUP BY CAST((ts-?)/? AS INTEGER) ORDER BY ts", (identifier, start, end, start, width)).fetchall()
+            return [dict(row) for row in rows]
+
+    def pulse(self, minutes, buckets):
+        """Per-node bucket averages. The window ends on a bucket boundary so cells stay put between polls."""
+        width = minutes * 60 / buckets
+        end = (math.floor(time.time() / width) + 1) * width
+        start = end - minutes * 60
+        columns = ",".join(f"AVG(json_extract(payload,'$.{key}'))" for key in PULSE)
+        with self.connect() as db:
+            identifiers = [row[0] for row in db.execute("SELECT id FROM fleet_nodes ORDER BY cluster,name,id")]
+            rows = db.execute(f"SELECT node_id,CAST((ts-?)/? AS INTEGER) AS bucket,{columns} FROM fleet_samples WHERE ts>=? AND ts<? GROUP BY node_id,bucket",
+                              (start, width, start, end)).fetchall()
+        nodes = {identifier: {key: [None] * buckets for key in PULSE} for identifier in identifiers}
+        for identifier, bucket, *values in rows:
+            if identifier in nodes and 0 <= bucket < buckets:
+                for key, value in zip(PULSE, values):
+                    nodes[identifier][key][bucket] = round(value, 1) if value is not None else None
+        return {"start": start, "end": end, "bucket_seconds": width, "nodes": nodes}
+
+    def fleet_history(self, hours, cluster=None):
+        """Aggregate per node per bucket first, then across nodes, so busy reporters do not dominate averages."""
+        end = time.time()
+        start, width = end - hours * 3600, hours * 3600 / 599
+        keys = ("cpu", "memory", "gpu", "ci_running")
+        # Extract each value once per row; the node/bucket aggregation then reads plain columns.
+        extracted = ",".join(f"json_extract(payload,'$.{key}') AS {key}" for key in keys)
+        inner = ",".join([f"AVG({key}) AS {key}" for key in keys] + [f"MAX({key}) AS {key}_peak" for key in ("cpu", "memory")])
+        scope = " AND node_id IN (SELECT id FROM fleet_nodes WHERE cluster=?)" if cluster else ""
+        with self.connect() as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute("SELECT MAX(ts) AS ts,AVG(cpu) AS cpu,MAX(cpu_peak) AS cpu_peak,AVG(memory) AS memory,MAX(memory_peak) AS memory_peak,"
+                              "AVG(gpu) AS gpu,ROUND(SUM(ci_running),1) AS ci_running,COUNT(*) AS hosts FROM ("
+                              f"SELECT node_id,bucket,MAX(ts) AS ts,{inner} FROM (SELECT node_id,ts,CAST((ts-?)/? AS INTEGER) AS bucket,{extracted} "
+                              f"FROM fleet_samples WHERE ts>=? AND ts<=?{scope}) GROUP BY node_id,bucket"
+                              ") GROUP BY bucket ORDER BY bucket", (start, width, start, end, *((cluster,) if cluster else ()))).fetchall()
             return [dict(row) for row in rows]
 
     def prune(self, retention):
@@ -236,7 +397,9 @@ def create_fleet_app(settings):
         await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(title="OpsDeck Fleet", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(SelectiveGZip)
     app.state.fleet = fleet
+    app.state.version = settings.version
     app.state.workspace = relay
 
     def bearer(authorization):
@@ -254,6 +417,12 @@ def create_fleet_app(settings):
             raise HTTPException(401, "Operator access token required")
         attempts.pop(key, None)
 
+    def metrics_auth(request: Request, authorization: str | None = Header(default=None)):
+        # A scrape-only credential keeps the operator token out of monitoring configuration.
+        if settings.metrics_token and hmac.compare_digest(bearer(authorization).encode(), settings.metrics_token.encode()):
+            return
+        authenticate(request, authorization)
+
     def agent_auth(authorization: str | None = Header(default=None)):
         return fleet.credential(bearer(authorization))
 
@@ -268,13 +437,28 @@ def create_fleet_app(settings):
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "mode": "central"}
+        return {"status": "ok", "mode": "central", "version": settings.version}
 
     @app.get("/api/snapshot", dependencies=[Depends(authenticate)])
     @app.get("/api/fleet", dependencies=[Depends(authenticate)])
     def overview():
-        return {"mode": "central", "nodes": fleet.nodes(settings.interval), "server_time": time.time(),
-                "sample_seconds": settings.interval, "retention_days": settings.retention, "actions_enabled": False}
+        nodes, now = fleet.nodes(settings.interval), time.time()
+        alerts = fleet_alerts(nodes, now)
+        return {"mode": "central", "nodes": nodes, "summary": fleet_summary(nodes, alerts), "alerts": alerts, "server_time": now,
+                "sample_seconds": settings.interval, "retention_days": settings.retention, "actions_enabled": False, "version": settings.version}
+
+    @app.get("/api/fleet/pulse", dependencies=[Depends(authenticate)])
+    def pulse(minutes: int = Query(default=60, ge=5, le=1440), buckets: int = Query(default=60, ge=10, le=120)):
+        return fleet.pulse(minutes, buckets)
+
+    @app.get("/api/fleet/history", dependencies=[Depends(authenticate)])
+    def fleet_history(hours: int = Query(default=1, ge=1, le=168), cluster: str | None = Query(default=None, min_length=1, max_length=120)):
+        return fleet.fleet_history(hours, cluster)
+
+    @app.get("/api/fleet/metrics", dependencies=[Depends(metrics_auth)])
+    def metrics():
+        nodes = fleet.nodes(settings.interval)
+        return PlainTextResponse(prometheus(nodes, fleet_alerts(nodes), settings.version), media_type="text/plain; version=0.0.4")
 
     @app.post("/api/fleet/nodes", dependencies=[Depends(authenticate)])
     def enroll(body: NodeRequest):
@@ -290,6 +474,10 @@ def create_fleet_app(settings):
         relay.cancel(str(identifier))
         return fleet.change_credential(str(identifier), rotate=True)
 
+    @app.post("/api/fleet/nodes/{identifier}/settings", dependencies=[Depends(authenticate)])
+    def configure(identifier: UUID, body: NodeSettingsRequest):
+        return fleet.configure(str(identifier), body.model_dump(exclude_unset=True), settings.interval)
+
     @app.get("/api/fleet/nodes/{identifier}", dependencies=[Depends(authenticate)])
     def node(identifier: UUID):
         return {**fleet.snapshot(str(identifier), settings.interval), "workspace_connected": relay.online(str(identifier))}
@@ -300,9 +488,7 @@ def create_fleet_app(settings):
 
     @app.api_route("/api/fleet/nodes/{identifier}/workspace/{path:path}", methods=["GET", "POST"], dependencies=[Depends(authenticate)])
     async def workspace(identifier: UUID, path: str, request: Request):
-        node = next((n for n in fleet.nodes(settings.interval) if n["id"] == str(identifier)), None)
-        if node is None:
-            raise HTTPException(404, "Node not found")
+        node = fleet.node(str(identifier), settings.interval)
         if node["revoked"]:
             raise HTTPException(409, "This host's agent has been revoked")
         if request.method == "POST":
@@ -322,8 +508,8 @@ def create_fleet_app(settings):
         return await relay.complete(credential[0], str(identifier), request)
 
     @app.get("/api/events", dependencies=[Depends(authenticate)])
-    def events():
-        return fleet.events()
+    def events(limit: int = Query(default=100, ge=1, le=1000), q: str = Query(default="", max_length=200)):
+        return fleet.events(limit, q.strip())
 
     @app.post("/api/agent/telemetry")
     async def ingest(request: Request, credential=Depends(agent_auth)):
@@ -339,13 +525,13 @@ def create_fleet_app(settings):
         return await asyncio.to_thread(fleet.ingest, credential, body, settings.retention)
 
     if settings.static.exists():
-        app.mount("/assets", StaticFiles(directory=settings.static / "assets"), name="assets")
+        app.mount("/assets", HashedAssets(directory=settings.static / "assets"), name="assets")
 
         @app.get("/{path:path}")
         def frontend(path: str):
             if path.startswith("api/"):
                 raise HTTPException(404, "Unknown API route")
-            return FileResponse(settings.static / "index.html")
+            return FileResponse(settings.static / "index.html", headers={"Cache-Control": "no-cache"})
     else:
         @app.get("/")
         def unbuilt():

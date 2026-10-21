@@ -81,7 +81,7 @@ service-logs: ## Follow native application logs
 	journalctl --user -u opsdeck -f
 
 docker-build: ## Build the multi-stage application image
-	docker build -f deploy/docker/Dockerfile -t $(IMAGE) .
+	docker build -f deploy/docker/Dockerfile --build-arg SOURCE_COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || echo dev) -t $(IMAGE) .
 
 docker-test: ## Verify Compose auth, persistent history, and Linux host collection in a disposable project
 	$(PYTHON) -m deploy.container_smoke

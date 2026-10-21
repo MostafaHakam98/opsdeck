@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AlertTriangle, OctagonAlert } from "lucide-react";
 import {
   CartesianGrid,
   Line,
@@ -11,18 +12,20 @@ import {
 import { bytes, pct } from "../../lib/api";
 import { records, object, number, text, age } from "./format";
 import { Status, Table, Section } from "./FleetComponents";
-import type { Detail, Point } from "./types";
+import type { Alert, Detail, Point } from "./types";
 
 export function NodeDetail({
   detail,
   history,
   hours,
   onHours,
+  alerts = [],
 }: {
   detail: Detail;
   history: Point[];
   hours: number;
   onHours: (hours: number) => void;
+  alerts?: Alert[];
 }) {
   const sources = detail.sources;
   const host = object(sources.host?.data),
@@ -39,15 +42,55 @@ export function NodeDetail({
           <h1>{detail.node.name}</h1>
           <p>
             {detail.node.cluster} /{" "}
-            {detail.node.hostname || "Waiting for hostname"}
+            <code>{detail.node.hostname || "Waiting for hostname"}</code>
           </p>
         </div>
-        <Status value={detail.node.status} />
+        <div className="fleet-node-badges">
+          {!!detail.node.maintenance && (
+            <span className="fleet-badge">Maintenance</span>
+          )}
+          <Status value={detail.node.status} />
+        </div>
       </div>
+      {alerts.length > 0 && (
+        <ul
+          className="fleet-alert-list fleet-node-alerts"
+          aria-label="Host alerts"
+        >
+          {alerts.map((alert) => (
+            <li
+              key={alert.key}
+              className={`fleet-alert fleet-alert-${alert.severity}`}
+            >
+              {alert.severity === "critical" ? (
+                <OctagonAlert size={16} aria-hidden="true" />
+              ) : (
+                <AlertTriangle size={16} aria-hidden="true" />
+              )}
+              <span>
+                <span className="visually-hidden">
+                  {alert.severity === "critical" ? "Critical: " : "Warning: "}
+                </span>
+                <span>{alert.title}</span>
+                <small>{alert.detail}</small>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!!detail.node.maintenance && (
+        <p className="fleet-note" role="status">
+          This host is in maintenance. Its alerts are suppressed until
+          maintenance is turned off in Host settings.
+        </p>
+      )}
       <p className="fleet-context">
         Last observation {age(detail.node.age_seconds)}. Collection scope:{" "}
         {detail.node.scope || "not reported"}.
       </p>
+      {detail.node.notes && (
+        <p className="fleet-node-notes">{detail.node.notes}</p>
+      )}
       {detail.node.status !== "online" && (
         <div className="fleet-warning" role="status">
           {detail.node.status === "revoked"
@@ -72,9 +115,11 @@ export function NodeDetail({
             />
             <small>
               {sources[key]?.message ||
-                (sources[key]
+                (sources[key]?.age_seconds != null
                   ? `Updated ${age(sources[key].age_seconds)}`
-                  : "Waiting for telemetry")}
+                  : sources[key]
+                    ? "Not reported by this agent"
+                    : "Waiting for telemetry")}
             </small>
           </div>
         ))}
@@ -97,7 +142,9 @@ export function NodeDetail({
               <span>CPU</span>
               <strong>{pct(number(cpu.percent))}</strong>
               <small>
-                {text(cpu.cores)} cores / {text(cpu.threads)} threads
+                {number(cpu.cores) === null
+                  ? "Core count not reported"
+                  : `${text(cpu.cores)} cores / ${text(cpu.threads)} threads`}
               </small>
             </div>
             <div>
@@ -234,7 +281,11 @@ export function NodeDetail({
                         : v.memory_used_mib * 1024 * 1024,
                     )}
                   </td>
-                  <td>{text(v.temperature)} °C</td>
+                  <td>
+                    {number(v.temperature) === null
+                      ? "Not reported"
+                      : `${v.temperature} °C`}
+                  </td>
                 </tr>
               ))}
             </Table>

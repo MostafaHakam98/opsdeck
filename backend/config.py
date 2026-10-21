@@ -5,11 +5,23 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+def build_version():
+    """OPSDECK_VERSION, else the SOURCE_COMMIT file written at build time, else "dev"."""
+    value = os.getenv("OPSDECK_VERSION", "").strip()
+    if not value:
+        try:
+            value = (Path(__file__).resolve().parents[1] / "SOURCE_COMMIT").read_text().strip()
+        except (OSError, UnicodeDecodeError):
+            value = ""
+    return value[:64] or "dev"
+
+
 @dataclass
 class Settings:
     mode: str = field(default_factory=lambda: os.getenv("OPSDECK_MODE", "standalone"))
     fleet_url: str = field(default_factory=lambda: os.getenv("OPSDECK_FLEET_URL", "").strip().rstrip("/"))
     token: str = field(default_factory=lambda: os.getenv("OPSDECK_TOKEN", ""))
+    metrics_token: str = field(default_factory=lambda: os.getenv("OPSDECK_METRICS_TOKEN", "").strip())
     db: str = field(default_factory=lambda: os.getenv("OPSDECK_DB", "./data/opsdeck.sqlite"))
     interval: int = field(default_factory=lambda: max(5, int(os.getenv("OPSDECK_SAMPLE_SECONDS", "10"))))
     retention: int = field(default_factory=lambda: max(1, int(os.getenv("OPSDECK_RETENTION_DAYS", "30"))))
@@ -32,6 +44,7 @@ class Settings:
     scope: str = field(default_factory=lambda: os.getenv("OPSDECK_SCOPE", "native"))
     findings_path: str = field(default_factory=lambda: os.getenv("OPSDECK_FINDINGS_PATH", "./data/findings.json"))
     static: Path = field(default_factory=lambda: Path(__file__).resolve().parents[1] / "frontend" / "dist")
+    version: str = field(default_factory=build_version)
 
     def validate(self):
         if self.fleet_url:
@@ -51,6 +64,8 @@ class Settings:
             raise ValueError("Central mode does not support host actions or operator controls")
         if len(self.token) < 32 or self.token.startswith("replace-"):
             raise ValueError("Set OPSDECK_TOKEN to a random secret of at least 32 characters")
+        if self.metrics_token and (len(self.metrics_token) < 32 or self.metrics_token == self.token):
+            raise ValueError("OPSDECK_METRICS_TOKEN must be a separate random secret of at least 32 characters")
         if self.gitlab_token and not self.gitlab_url.startswith("https://"):
             raise ValueError("GITLAB_URL must use HTTPS when a token is configured")
         if not 1 <= self.image_upload_max_gib <= 128:

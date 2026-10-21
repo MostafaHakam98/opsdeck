@@ -25,7 +25,8 @@ def test_auth_is_required_for_every_data_and_action_route(app):
             assert client.get("/api/" + path).status_code == 401
         for path in ("preview", "execute"):
             assert client.post("/api/actions/" + path, json={}).status_code == 401
-        assert client.get("/healthz").json() == {"status": "ok"}
+        health = client.get("/healthz").json()
+        assert health["status"] == "ok" and health["mode"] == "standalone" and health["version"]
         result = client.get("/api/snapshot", headers={"Authorization": "Bearer " + TOKEN})
         assert result.status_code == 200
         assert TOKEN not in result.text
