@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 
 from backend.store import Store
 from backend.web import HashedAssets, SelectiveGZip
@@ -23,7 +23,8 @@ MAX_TELEMETRY_BYTES = 2 * 1024 * 1024
 SOURCE_NAMES = ("host", "docker", "gpu", "runner", "services")
 METRICS = ("cpu", "memory", "gpu", "rx", "tx", "io_pressure", "ci_running")
 PULSE = ("cpu", "memory", "gpu")
-NODE_COLUMNS = "id,name,cluster,created_at,revoked,last_seen,collected_at,summary,notes,maintenance"
+NODE_COLUMNS = "id,name,cluster,created_at,revoked,last_seen,collected_at,summary,notes,maintenance,ignored_sources"
+IGNORABLE = ("docker", "gpu", "runner", "services")
 # (metric, title, label, critical, warning); all three are percentages.
 ALERT_METRICS = (("cpu", "High CPU load", "CPU", 90, 80), ("memory", "High memory use", "Memory", 90, 80),
                  ("io_pressure", "High I/O pressure", "I/O pressure (avg60)", 25, 10))
@@ -42,6 +43,13 @@ class NodeSettingsRequest(BaseModel):
     cluster: str | None = Field(default=None, min_length=1, max_length=120)
     notes: str | None = Field(default=None, max_length=500)
     maintenance: bool | None = None
+    # The host source is the agent itself and cannot be ignored.
+    ignored_sources: list[Literal["docker", "gpu", "runner", "services"]] | None = Field(default=None, max_length=4)
+
+    @field_validator("ignored_sources")
+    @classmethod
+    def canonical(cls, value):
+        return None if value is None else [name for name in IGNORABLE if name in value]
 
 
 class TelemetrySource(BaseModel):
@@ -90,6 +98,14 @@ def metric_values(sources):
             "ci_running": numeric(source_data(sources, "docker", {}).get("ci_running"))}
 
 
+def ignored_sources(raw):
+    try:
+        names = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    return [name for name in IGNORABLE if isinstance(names, list) and name in names]
+
+
 def duration(seconds):
     seconds = max(0, int(seconds))
     return f"{seconds} s" if seconds < 120 else f"{seconds // 60} min" if seconds < 7200 else f"{seconds // 3600} h"
@@ -121,10 +137,11 @@ def fleet_alerts(nodes, now=None):
             if value is not None and value >= warning:
                 severity, limit = ("critical", critical) if value >= critical else ("warning", warning)
                 add(key, severity, title, f"{label} at {value:.0f}%, {severity} threshold {limit}%.", value)
+        ignored, messages = node.get("ignored_sources") or [], node.get("source_messages") or {}
         for name, status in node["source_status"].items():
-            if status in ("degraded", "unavailable"):
+            if status in ("degraded", "unavailable") and name not in ignored:
                 label = SOURCE_LABELS.get(name, name)
-                add("source", "warning", f"{label} source {status}", f"The {label} collector reported {status}. Open the host to read the source message.", key="source:" + name)
+                add("source", "warning", f"{label} source {status}", messages.get(name) or f"The {label} collector reported {status}. Open the host to read the source message.", key="source:" + name)
     alerts.sort(key=lambda a: (a["severity"] != "critical", a["node_name"].lower(), a["node_id"]))
     return alerts
 
@@ -184,6 +201,8 @@ class Fleet(Store):
                 db.execute("ALTER TABLE fleet_nodes ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
             if "maintenance" not in columns:
                 db.execute("ALTER TABLE fleet_nodes ADD COLUMN maintenance INTEGER NOT NULL DEFAULT 0")
+            if "ignored_sources" not in columns:
+                db.execute("ALTER TABLE fleet_nodes ADD COLUMN ignored_sources TEXT NOT NULL DEFAULT '[]'")
 
     def enroll(self, name, cluster):
         identifier, secret = str(uuid4()), secrets.token_urlsafe(32)
@@ -247,6 +266,7 @@ class Fleet(Store):
             host = source_data(sources, "host", {})
             summary = json.dumps({"metrics": metric_values(sources),
                                   "source_status": {key: item["status"] for key, item in sources.items()},
+                                  "source_messages": {key: item["message"][:300] for key, item in sources.items() if item.get("message")},
                                   "hostname": host["hostname"][:255] if isinstance(host.get("hostname"), str) else None,
                                   "scope": host["scope"][:40] if isinstance(host.get("scope"), str) else None}, allow_nan=False)
         except (ValueError, OverflowError):
@@ -283,7 +303,9 @@ class Fleet(Store):
             value["source_status"] = summary.get("source_status", {})
             value["hostname"] = summary.get("hostname")
             value["scope"] = summary.get("scope")
+            value["source_messages"] = summary.get("source_messages", {})
             value["maintenance"] = bool(value["maintenance"])
+            value["ignored_sources"] = ignored_sources(value["ignored_sources"])
             result.append(value)
         return result
 
@@ -294,19 +316,22 @@ class Fleet(Store):
         return found[0]
 
     def configure(self, identifier, changes, interval):
-        """Name, cluster, notes, and maintenance only; the agent credential is never touched."""
+        """Name, cluster, notes, maintenance, and ignored sources only; the agent credential is never touched."""
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT name,cluster,notes,maintenance FROM fleet_nodes WHERE id=?", (identifier,)).fetchone()
+            row = db.execute("SELECT name,cluster,notes,maintenance,ignored_sources FROM fleet_nodes WHERE id=?", (identifier,)).fetchone()
             if not row:
                 raise HTTPException(404, "Node not found")
-            current = {"name": row[0], "cluster": row[1], "notes": row[2], "maintenance": bool(row[3])}
+            current = {"name": row[0], "cluster": row[1], "notes": row[2], "maintenance": bool(row[3]), "ignored_sources": ignored_sources(row[4])}
             changed = {key: value for key, value in changes.items() if value is not None and value != current[key]}
             if changed:
+                stored = {"maintenance": int, "ignored_sources": json.dumps}
                 db.execute("UPDATE fleet_nodes SET " + ",".join(key + "=?" for key in changed) + " WHERE id=?",
-                           (*(int(v) if k == "maintenance" else v for k, v in changed.items()), identifier))
+                           (*(stored.get(k, str)(v) for k, v in changed.items()), identifier))
                 name = changed.get("name", current["name"])
-                fields = [f"name (was {current['name']})" if key == "name" else key for key in changed if key != "maintenance"]
+                labels = {"name": f"name (was {current['name']})",
+                          "ignored_sources": f"ignored sources ({', '.join(changed.get('ignored_sources') or []) or 'none'})"}
+                fields = [labels.get(key, key) for key in changed if key != "maintenance"]
                 if fields:
                     self._audit(db, "Host settings changed", name + ": " + ", ".join(fields))
                 if "maintenance" in changed:

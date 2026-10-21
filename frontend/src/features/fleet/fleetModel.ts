@@ -241,14 +241,17 @@ export function deriveAlerts(nodes: Node[]): Alert[] {
         value,
       );
     }
+    const ignored = node.ignored_sources || [];
     for (const [source, status] of Object.entries(node.source_status || {})) {
       if (status !== "degraded" && status !== "unavailable") continue;
+      if (ignored.includes(source)) continue;
       const label = SOURCE_LABELS[source] || source;
       add(
         "warning",
         "source",
         `${label} source ${status}`,
-        `The ${label} collector reported ${status}. Open the host to read the source message.`,
+        node.source_messages?.[source] ||
+          `The ${label} collector reported ${status}. Open the host to read the source message.`,
         null,
         `source:${source}`,
       );

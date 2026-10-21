@@ -48,6 +48,47 @@ For an active runner with **Metrics endpoint: Unavailable**, follow [Runner tele
 - Queue/duration fields can be absent in GitLab responses. Empty values are retained, not replaced with estimates.
 - Export runner facts separately if configuration budgets are missing. Do not copy the runner's secret-bearing TOML file into application data.
 
+## Agent collector shows unavailable
+
+The host page shows each collector's own message, and fleet alerts repeat it. Diagnose on the host first; every command below is read-only.
+
+**Docker: "Docker API did not answer within 10s while listing containers (ReadTimeout)".** The daemon is reachable but slow.
+
+```bash
+time docker ps
+time docker system df
+systemctl status docker
+```
+
+If `docker ps` takes several seconds, raise `OPSDECK_DOCKER_TIMEOUT` (seconds, default 10, range 2..60) in `.env.agent` and recreate the agent. Only listing containers is essential: slow engine info, per-container stats, image lists, or disk usage mark Docker **degraded** with a message such as "Container stats timed out for 3 of 12 running containers" or "Docker disk usage timed out; showing the last result from 14 min ago", and the rest of the data is kept. Disk usage runs at most every 5 minutes with its own longer timeout (`max(30, 3 x OPSDECK_DOCKER_TIMEOUT)`). "Docker socket permission denied" means the agent container lacks the socket's group: check `stat -c '%g' /var/run/docker.sock` and set `OPSDECK_DOCKER_GID` (`make docker-agent-up` detects it).
+
+**Runner: "No runner metrics listener at 127.0.0.1:9252".** Nothing listens on the configured port, so the runner source is shown as not configured rather than failing.
+
+```bash
+curl -s 127.0.0.1:9252/metrics | head
+systemctl status gitlab-runner
+```
+
+If GitLab Runner runs on this host, enable its loopback listener (sets `listen_address = "127.0.0.1:9252"` in `/etc/gitlab-runner/config.toml` and restarts the runner gracefully, preserving concurrency and job limits):
+
+```bash
+sudo bash scripts/runner/tune-runner-host.sh metrics
+```
+
+If the host runs no runner, set `RUNNER_METRICS_URL=` (empty) in `.env.agent`. Timeouts and HTTP errors from a listener that does exist stay **unavailable** with the exception class.
+
+**Services: "The container cannot reach the host's systemd bus".** Container agents read unit state through the host's DBus socket, which some host policies deny. Check the units directly with `systemctl status docker gitlab-runner`. Then either run the host service exporter once per minute from the deployment account and start the agent with the services override:
+
+```bash
+# Example crontab entry (replace the absolute project path):
+# * * * * * cd /path/to/opsdeck && /usr/bin/python3 -m deploy.export_services --output data/service-status.json
+make docker-agent-up COMPOSE_EXTRA=deploy/docker/compose.services.yaml
+```
+
+or set `OPSDECK_SERVICES=` (empty) in `.env.agent` to stop monitoring services. Other `systemctl` failures include the first line of its error output after the exception class.
+
+**Monitored collectors.** For a collector a host does not run, uncheck it under **Host settings > Monitored collectors** instead of leaving a permanent alert. The host page then shows it as "not monitored", and it raises no alerts and no Prometheus alert counts. The host collector is always monitored. The change applies on the server immediately and is recorded in **Fleet audit** as "Host settings changed" with "ignored sources".
+
 ## History and backups
 
 **Chart still empty:** wait for two retained samples and verify that the host source is healthy. History sampling skips missing host data.

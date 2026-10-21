@@ -42,6 +42,18 @@ const SOURCES = [
   ["runner", "Runner"],
   ["services", "Services"],
 ] as const;
+/** Short remedies for the collector failures agents report most often. */
+function fixHint(key: string, message: string): string | null {
+  if (key === "docker" && /permission denied/i.test(message))
+    return "Set OPSDECK_DOCKER_GID to the group of /var/run/docker.sock and restart the agent.";
+  if (key === "docker" && /did not answer|timed out/i.test(message))
+    return "Time 'docker ps' on the host; if it is slow, raise OPSDECK_DOCKER_TIMEOUT.";
+  if (key === "runner" && /listener/i.test(message))
+    return "Enable the runner listen_address (scripts/runner/tune-runner-host.sh metrics), or uncheck Runner under Monitored collectors.";
+  if (key === "services" && /systemd bus/i.test(message))
+    return "Schedule deploy.export_services with compose.services.yaml, or uncheck Services under Monitored collectors.";
+  return null;
+}
 const axis = {
   stroke: "var(--chart-tick)",
   tick: { fill: "var(--chart-tick)", fontSize: 12 },
@@ -507,7 +519,24 @@ export function NodeDetail({
       <ul className="fleet-source-grid" aria-label="Collectors">
         {SOURCES.map(([key, label]) => {
           const source = sources[key];
+          if (key !== "host" && node.ignored_sources?.includes(key))
+            return (
+              <li key={key} className="fleet-source-ignored">
+                <span className="fleet-source-head">
+                  <strong>{label}</strong>
+                  <Status value="not_monitored" pill />
+                </span>
+                <small>
+                  Not monitored on this host; it raises no alerts. Change this
+                  in Host settings.
+                </small>
+              </li>
+            );
           const status = source?.stale ? "stale" : source?.status || "waiting";
+          const hint =
+            status !== "healthy" && source?.message
+              ? fixHint(key, source.message)
+              : null;
           return (
             <li key={key}>
               <span className="fleet-source-head">
@@ -522,6 +551,12 @@ export function NodeDetail({
                       ? "Not reported by this agent"
                       : "Waiting for telemetry")}
               </small>
+              {hint && (
+                <small className="fleet-source-fix">
+                  <b>How to fix:</b> {hint} See &ldquo;Agent collector shows
+                  unavailable&rdquo; in the troubleshooting guide.
+                </small>
+              )}
             </li>
           );
         })}

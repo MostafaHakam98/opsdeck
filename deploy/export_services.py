@@ -1,4 +1,7 @@
-"""Publish allowlisted native service readings for container deployments denied host DBus access."""
+"""Publish allowlisted native service readings for container deployments denied host DBus access.
+
+Runs with the host's system Python (3.6 or newer) and the standard library only.
+"""
 import argparse
 import json
 import os
@@ -12,7 +15,7 @@ import time
 def export(output, names):
     if not names or len(names) > 12 or any(not re.fullmatch(r"[A-Za-z0-9_.@-]+\.service", name) for name in names):
         raise ValueError("Select between one and twelve valid service unit names")
-    result = subprocess.run(["systemctl", "--system", "show", "--property=Id,LoadState,ActiveState,SubState,ExecMainStatus,MemoryCurrent,CPUUsageNSec", "--", *names], check=True, text=True, capture_output=True, timeout=10)
+    result = subprocess.run(["systemctl", "--system", "show", "--property=Id,LoadState,ActiveState,SubState,ExecMainStatus,MemoryCurrent,CPUUsageNSec", "--", *names], check=True, universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
     rows = []
     for block in result.stdout.strip().split("\n\n"):
         values = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
@@ -32,7 +35,9 @@ def export(output, names):
         os.chmod(temporary, 0o644)
         os.replace(temporary, output)
     finally:
-        Path(temporary).unlink(missing_ok=True)
+        # Python 3.6 compatible equivalent of unlink(missing_ok=True); hosts may only have their system Python.
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def main():

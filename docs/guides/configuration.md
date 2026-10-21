@@ -21,6 +21,7 @@ Native mode loads `.env` without evaluating shell code. Whitespace around `=` an
 | `OPSDECK_ENV_FILE` | `.env` native | Alternate launcher config file; image uses `/data/config.env` |
 | `OPSDECK_SERVICES` | Docker, runner, Tailscale units | Up to 12 comma-separated `.service` unit names |
 | `OPSDECK_SERVICES_FILE` | Empty | Optional sanitized native service snapshot, instead of direct DBus reads; see deployment guide |
+| `OPSDECK_DOCKER_TIMEOUT` | `10`, range `2..60` | Seconds to wait for each Docker API call; disk usage uses `max(30, 3 x value)`. Raise it when `time docker ps` is slow on the host |
 
 The application keeps no user-account database. The shared operator token protects measurements and actions. Source code can be cloned anonymously from the public repository.
 
