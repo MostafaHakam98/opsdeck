@@ -74,13 +74,13 @@ export function LiveCheckpoints({
       name: "Node CPU utilization",
       group: "resources",
       key: "cpu_percent",
-      format: (v: any) => (v == null ? "—" : `${v.toFixed(1)}%`),
+      format: (v: any) => (v == null ? "n/a" : `${v.toFixed(1)}%`),
     },
     {
       name: "Node memory utilization",
       group: "resources",
       key: "memory_percent",
-      format: (v: any) => (v == null ? "—" : `${v.toFixed(1)}%`),
+      format: (v: any) => (v == null ? "n/a" : `${v.toFixed(1)}%`),
     },
     {
       name: "Node available memory",
@@ -409,7 +409,7 @@ export function LiveCheckpoints({
                               <td key={row.id}>
                                 {metric.format
                                   ? metric.format(value)
-                                  : (value ?? "—")}
+                                  : (value ?? "n/a")}
                               </td>
                             );
                           })}

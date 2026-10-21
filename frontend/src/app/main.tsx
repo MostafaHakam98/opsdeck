@@ -12,16 +12,41 @@ import "./styles.css";
 import { applyTheme, storedTheme } from "../components/ThemeToggle";
 import { BrandMark } from "../components/AppSidebar";
 applyTheme(storedTheme());
+const loadFleet = () => import("../features/fleet/FleetApp");
+const loadWorkspace = () => import("./HostWorkspace");
 const FleetApp = lazy(() =>
-  import("../features/fleet/FleetApp").then((module) => ({
-    default: module.FleetApp,
-  })),
+  loadFleet().then((module) => ({ default: module.FleetApp })),
 );
 const HostWorkspace = lazy(() =>
-  import("./HostWorkspace").then((module) => ({
-    default: module.HostWorkspace,
-  })),
+  loadWorkspace().then((module) => ({ default: module.HostWorkspace })),
 );
+const MODE_KEY = "opsdeck.mode";
+// Start the mode check and the likely workspace chunks together instead of one after another.
+let modeRequest: Promise<string> | null = requestMode();
+// The effect below reports failures; this only keeps an early rejection from being logged as unhandled.
+modeRequest.catch(() => undefined);
+preload(rememberedMode());
+
+function requestMode() {
+  return fetch("/healthz").then((response) => {
+    if (!response.ok) throw new Error("Server unavailable");
+    return response.json().then((data) => String(data.mode || "standalone"));
+  });
+}
+function rememberedMode() {
+  try {
+    return localStorage.getItem(MODE_KEY);
+  } catch {
+    return null;
+  }
+}
+function preload(mode: string | null) {
+  if (mode === "central") {
+    void loadFleet().catch(() => undefined);
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("node")) void loadWorkspace().catch(() => undefined);
+  } else if (mode === "standalone") void loadWorkspace().catch(() => undefined);
+}
 
 function Deployment() {
   const [mode, setMode] = useState<string | null>(null);
@@ -29,12 +54,19 @@ function Deployment() {
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/healthz", { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error("Server unavailable");
-        return response.json();
+    const request = modeRequest || requestMode();
+    modeRequest = null;
+    request
+      .then((value) => {
+        if (controller.signal.aborted) return;
+        try {
+          localStorage.setItem(MODE_KEY, value);
+        } catch {
+          // Private windows may refuse storage; the next visit simply preloads less.
+        }
+        preload(value);
+        setMode(value);
       })
-      .then((data) => setMode(data.mode || "standalone"))
       .catch((err) => {
         if (controller.signal.aborted) return;
         // Network failures and non-JSON replies (proxy error pages) read the same to an operator.

@@ -18,7 +18,6 @@ import {
   Box,
   Check,
   ChevronRight,
-  CircleHelp,
   Cpu,
   Download,
   ExternalLink,
@@ -85,6 +84,14 @@ import { LiveCheckpoints } from "../features/workloads/LiveCheckpoints";
 import { GitLabSetup } from "../features/workloads/GitLabSetup";
 import { Badge, tone } from "../components/Status";
 import { ThemeToggle } from "../components/ThemeToggle";
+import {
+  activeDot,
+  axisProps,
+  chartTooltip,
+  gapDots,
+  gridProps,
+} from "../components/chartTheme";
+import { LiveIndicator } from "../components/LiveIndicator";
 
 function SourceNotice({ source, name }: { source?: Source; name: string }) {
   if (!source || (source.status === "healthy" && !source.stale)) return null;
@@ -132,10 +139,10 @@ function Meter({
     </div>
   );
 }
+/** Compact empty state: one line of what is missing, one line of what to do. */
 function Empty({ title, text }: { title: string; text: string }) {
   return (
     <div className="empty">
-      <CircleHelp size={28} />
       <h3>{title}</h3>
       <p>{text}</p>
     </div>
@@ -181,6 +188,11 @@ function Chart({
       />
     );
   const ChartType = percent ? AreaChart : LineChart;
+  const time = (v: number) =>
+    new Date(v * 1000).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   return (
     <div
       className="chart"
@@ -189,34 +201,27 @@ function Chart({
       <ResponsiveContainer width="100%" height={240}>
         <ChartType
           data={history}
-          margin={{ top: 12, right: 8, left: 0, bottom: 0 }}
+          margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
         >
-          <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+          <CartesianGrid {...gridProps} vertical={false} />
           <XAxis
             dataKey="ts"
-            tickFormatter={(v) =>
-              new Date(v * 1000).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            }
-            tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
+            tickFormatter={time}
             minTickGap={60}
-            axisLine={false}
-            tickLine={false}
+            {...axisProps}
           />
           <YAxis
-            width={48}
+            width={percent || count ? 44 : 72}
             domain={percent ? [0, 100] : [0, "auto"]}
             allowDecimals={!count}
+            ticks={percent ? [0, 25, 50, 75, 100] : undefined}
             tickFormatter={(v) =>
               percent ? `${v}%` : count ? String(v) : bytes(v)
             }
-            tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
-            axisLine={false}
-            tickLine={false}
+            {...axisProps}
           />
           <Tooltip
+            {...chartTooltip}
             labelFormatter={(v) => new Date(Number(v) * 1000).toLocaleString()}
             formatter={(v: any, name: any) => [
               percent
@@ -226,13 +231,6 @@ function Chart({
                   : `${bytes(Number(v))}/s`,
               name,
             ]}
-            contentStyle={{
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              color: "var(--text)",
-            }}
-            labelStyle={{ color: "var(--text-muted)" }}
           />
           {keys.map(([key, label, color]) =>
             percent ? (
@@ -243,9 +241,10 @@ function Chart({
                 name={label}
                 stroke={color}
                 fill={color}
-                fillOpacity={0.12}
-                strokeWidth={2}
-                dot={{ r: 2.5, strokeWidth: 1, fill: "var(--surface)" }}
+                fillOpacity={0.08}
+                strokeWidth={1.75}
+                dot={gapDots(history as any[], key, color)}
+                activeDot={activeDot}
                 isAnimationActive={false}
                 connectNulls={false}
               />
@@ -256,8 +255,9 @@ function Chart({
                 dataKey={key}
                 name={label}
                 stroke={color}
-                dot={{ r: 2.5, strokeWidth: 1, fill: "var(--surface)" }}
-                strokeWidth={2}
+                dot={gapDots(history as any[], key, color)}
+                activeDot={activeDot}
+                strokeWidth={1.75}
                 isAnimationActive={false}
                 connectNulls={false}
               />
@@ -311,6 +311,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
   const [events, setEvents] = useState<Event[]>([]);
   const [hours, setHours] = useState(1);
   const [error, setError] = useState("");
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [query, setQuery] = useState("");
   const [containerRole, setContainerRole] = useState("all");
@@ -347,6 +348,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
           setSnapshot(s);
           setHistory(h);
           setEvents(e);
+          setUpdatedAt(Date.now());
           setError("");
         }
       } catch (err) {
@@ -374,6 +376,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
     setHistory([]);
     setEvents([]);
     setError("");
+    setUpdatedAt(null);
     setPlan(null);
   }
   if (!token)
@@ -526,7 +529,9 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
           <Cpu size={17} />
           CPU utilization
         </div>
-        <strong>{pct(host?.cpu.percent)}</strong>
+        <strong className={host ? undefined : "value-missing"}>
+          {pct(host?.cpu.percent)}
+        </strong>
         <Meter value={host?.cpu.percent} />
         <small>
           {host
@@ -539,7 +544,9 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
           <MemoryStick size={17} />
           Memory
         </div>
-        <strong>{pct(host?.memory.percent)}</strong>
+        <strong className={host ? undefined : "value-missing"}>
+          {pct(host?.memory.percent)}
+        </strong>
         <Meter value={host?.memory.percent} color="purple" />
         <small>
           {host
@@ -552,7 +559,9 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
           <Zap size={17} />
           GPU utilization
         </div>
-        <strong>{pct(gpu?.utilization)}</strong>
+        <strong className={gpu ? undefined : "value-missing"}>
+          {pct(gpu?.utilization)}
+        </strong>
         <Meter value={gpu?.utilization} color="teal" />
         <small>
           {gpu
@@ -570,7 +579,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
         <strong>
           {sources.docker?.status === "healthy"
             ? (docker?.ci_running ?? 0)
-            : "—"}
+            : "n/a"}
           <span className="stat-unit"> running</span>
         </strong>
         <small>
@@ -686,26 +695,22 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               }}
             />
           )}
-          <div>
-            <ThemeToggle />
-            <span className={`live ${error ? "offline" : ""}`}>
-              <i />
-              {error
-                ? "Connection issue"
-                : snapshot
-                  ? "Auto refresh · 10s"
-                  : "Connecting"}
-            </span>
+          <div className="topbar-tools">
+            <LiveIndicator updatedAt={updatedAt} error={error || undefined} />
             <button
               className="icon-button"
               aria-label="Refresh metrics"
+              title="Refresh now"
               onClick={() => setRefresh((v) => v + 1)}
             >
-              <RefreshCw size={17} />
+              <RefreshCw size={16} />
             </button>
+            <ThemeToggle />
+            <span className="topbar-divider" aria-hidden="true" />
             <button
               className="icon-button"
               aria-label="Sign out"
+              title="Sign out"
               onClick={signOut}
             >
               <LogOut size={16} />
@@ -1027,7 +1032,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                 <Panel title="Host facts">
                   <dl className="facts">
                     <dt>Hostname</dt>
-                    <dd>{host?.hostname || "—"}</dd>
+                    <dd>{host?.hostname || "n/a"}</dd>
                     <dt>Collection scope</dt>
                     <dd>
                       {host?.scope === "host"
@@ -1036,28 +1041,30 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                           ? "Native node"
                           : host?.scope === "container"
                             ? "Container view"
-                            : "—"}
+                            : "n/a"}
                     </dd>
                     <dt>Operating system</dt>
-                    <dd>{host?.os || "—"}</dd>
+                    <dd>{host?.os || "n/a"}</dd>
                     <dt>Uptime</dt>
                     <dd>
                       {host
                         ? duration(snapshot!.server_time - host.boot_time)
-                        : "—"}
+                        : "n/a"}
                     </dd>
                     <dt>Load average (1 / 5 / 15m)</dt>
                     <dd>
                       {host?.cpu.load
                         .map((n: number) => n.toFixed(2))
-                        .join(" / ") || "—"}
+                        .join(" / ") || "n/a"}
                     </dd>
                     <dt>CPU frequency</dt>
                     <dd>
-                      {host?.cpu.mhz ? `${Math.round(host.cpu.mhz)} MHz` : "—"}
+                      {host?.cpu.mhz
+                        ? `${Math.round(host.cpu.mhz)} MHz`
+                        : "n/a"}
                     </dd>
                     <dt>Processes</dt>
-                    <dd>{host?.processes ?? "—"}</dd>
+                    <dd>{host?.processes ?? "n/a"}</dd>
                     <dt>Swap used</dt>
                     <dd>
                       {bytes(host?.memory.swap_used)} /{" "}
@@ -1110,10 +1117,10 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                           <tr>
                             <th>Mount</th>
                             <th>Device</th>
-                            <th>Capacity</th>
-                            <th>Available</th>
+                            <th className="num">Capacity</th>
+                            <th className="num">Available</th>
                             <th>Usage</th>
-                            <th>Inodes used</th>
+                            <th className="num">Inodes used</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1124,17 +1131,19 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                                 <small>{v.fstype}</small>
                               </td>
                               <td>{v.device}</td>
-                              <td>{bytes(v.total)}</td>
-                              <td>{bytes(v.free)}</td>
+                              <td className="num">{bytes(v.total)}</td>
+                              <td className="num">{bytes(v.free)}</td>
                               <td>
-                                <Meter
-                                  value={v.percent}
-                                  warnAt={85}
-                                  badAt={95}
-                                />
-                                {pct(v.percent)}
+                                <div className="usage-cell">
+                                  <Meter
+                                    value={v.percent}
+                                    warnAt={85}
+                                    badAt={95}
+                                  />
+                                  <span>{pct(v.percent)}</span>
+                                </div>
                               </td>
-                              <td>{pct(v.inode_percent)}</td>
+                              <td className="num">{pct(v.inode_percent)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1154,7 +1163,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                         <thead>
                           <tr>
                             <th>Device</th>
-                            <th>Capacity</th>
+                            <th className="num">Capacity</th>
                             <th>Media</th>
                             <th>Filesystem / partitions</th>
                           </tr>
@@ -1163,7 +1172,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                           {pageRows.map((d: any) => (
                             <tr key={d.name}>
                               <td>{d.name}</td>
-                              <td>{bytes(d.size)}</td>
+                              <td className="num">{bytes(d.size)}</td>
                               <td>{d.rota ? "HDD" : "Solid state"}</td>
                               <td>
                                 {d.fstype ||
@@ -1194,28 +1203,30 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                         <thead>
                           <tr>
                             <th>Device</th>
-                            <th>Read / write</th>
-                            <th>Operations/s</th>
-                            <th>Average latency</th>
-                            <th>Busy</th>
+                            <th className="num">Read / write</th>
+                            <th className="num">Operations/s</th>
+                            <th className="num">Average latency</th>
+                            <th className="num">Busy</th>
                           </tr>
                         </thead>
                         <tbody>
                           {pageRows.map((d: any) => (
                             <tr key={d.name}>
                               <td>{d.name}</td>
-                              <td>
+                              <td className="num">
                                 {bytes(d.read_bytes_s)}/s /{" "}
                                 {bytes(d.write_bytes_s)}
                                 /s
                               </td>
-                              <td>{d.iops?.toFixed(1) ?? "—"}</td>
-                              <td>
+                              <td className="num">
+                                {d.iops?.toFixed(1) ?? "n/a"}
+                              </td>
+                              <td className="num">
                                 {d.await_ms == null
-                                  ? "—"
+                                  ? "n/a"
                                   : `${d.await_ms.toFixed(1)} ms`}
                               </td>
-                              <td>{pct(d.busy_percent)}</td>
+                              <td className="num">{pct(d.busy_percent)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1271,11 +1282,14 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                                 </small>
                               </div>
                               <span>
-                                <ArrowDown size={13} />
-                                {bytes(n.rx_bytes_s)}/s
-                                <br />
-                                <ArrowUp size={13} />
-                                {bytes(n.tx_bytes_s)}/s
+                                <span title="Received">
+                                  <ArrowDown size={13} aria-label="Received" />
+                                  {bytes(n.rx_bytes_s)}/s
+                                </span>
+                                <span title="Sent">
+                                  <ArrowUp size={13} aria-label="Sent" />
+                                  {bytes(n.tx_bytes_s)}/s
+                                </span>
                               </span>
                             </div>
                           ))}
@@ -1286,7 +1300,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                 </Panel>
                 <Panel title="GPU & temperatures">
                   <SourceNotice source={sources.gpu} name="GPU" />
-                  {
+                  {sources.gpu?.data?.length > 0 && (
                     <PaginatedList
                       items={sources.gpu?.data || ([] as any[])}
                       label="GPU devices"
@@ -1305,11 +1319,11 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                                   {g.memory_used_mib} / {g.memory_total_mib} MiB
                                 </dd>
                                 <dt>Temperature</dt>
-                                <dd>{g.temperature ?? "—"} °C</dd>
+                                <dd>{g.temperature ?? "n/a"} °C</dd>
                                 <dt>Power draw / limit</dt>
                                 <dd>
-                                  {g.power_w ?? "—"} / {g.power_limit_w ?? "—"}{" "}
-                                  W
+                                  {g.power_w ?? "n/a"} /{" "}
+                                  {g.power_limit_w ?? "n/a"} W
                                 </dd>
                                 <dt>Driver</dt>
                                 <dd>{g.driver}</dd>
@@ -1319,7 +1333,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                         </>
                       )}
                     </PaginatedList>
-                  }
+                  )}
                   <PaginatedList
                     items={host?.temperatures || ([] as any[])}
                     label="Temperature sensors"
@@ -1356,8 +1370,8 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                             <th>Service</th>
                             <th>State</th>
                             <th>Detail</th>
-                            <th>Memory</th>
-                            <th>Exit code</th>
+                            <th className="num">Memory</th>
+                            <th className="num">Exit code</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1372,8 +1386,8 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                                   ? "Not installed"
                                   : s.substate}
                               </td>
-                              <td>{bytes(s.memory_bytes)}</td>
-                              <td>{s.exit_code ?? "—"}</td>
+                              <td className="num">{bytes(s.memory_bytes)}</td>
+                              <td className="num">{s.exit_code ?? "n/a"}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1393,18 +1407,20 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                         <thead>
                           <tr>
                             <th>Process</th>
-                            <th>PID</th>
-                            <th>Resident memory</th>
-                            <th>CPU</th>
+                            <th className="num">PID</th>
+                            <th className="num">Resident memory</th>
+                            <th className="num">CPU</th>
                           </tr>
                         </thead>
                         <tbody>
                           {pageRows.map((p: any) => (
                             <tr key={p.pid}>
-                              <td>{p.name}</td>
-                              <td>{p.pid}</td>
-                              <td>{bytes(p.memory_bytes)}</td>
-                              <td>{pct(p.cpu_percent)}</td>
+                              <td className="truncate" title={p.name}>
+                                {p.name}
+                              </td>
+                              <td className="num">{p.pid}</td>
+                              <td className="num">{bytes(p.memory_bytes)}</td>
+                              <td className="num">{pct(p.cpu_percent)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1425,7 +1441,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               <div className="summary-row">
                 <div>
                   <Box />
-                  <strong>{docker?.total_containers ?? "—"}</strong>
+                  <strong>{docker?.total_containers ?? "n/a"}</strong>
                   <span>Containers</span>
                 </div>
                 <div>
@@ -1433,7 +1449,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                   <strong>
                     {docker
                       ? containers.filter((c) => c.state === "running").length
-                      : "—"}
+                      : "n/a"}
                   </strong>
                   <span>Running in inventory</span>
                 </div>
@@ -1530,8 +1546,8 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                         <tr>
                           <th>Container</th>
                           <th>State</th>
-                          <th>CPU</th>
-                          <th>Memory</th>
+                          <th className="num">CPU</th>
+                          <th className="num">Memory</th>
                           <th>Ownership</th>
                           <th>Actions</th>
                         </tr>
@@ -1544,16 +1560,16 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                           )
                           .map((c) => (
                             <tr key={c.id}>
-                              <td>
-                                <strong>{c.name}</strong>
-                                <small>{c.image}</small>
+                              <td className="truncate">
+                                <strong title={c.name}>{c.name}</strong>
+                                <small title={c.image}>{c.image}</small>
                               </td>
                               <td>
                                 <Badge value={c.state} />
                                 <small>{c.status}</small>
                               </td>
-                              <td>{pct(c.cpu_percent)}</td>
-                              <td>
+                              <td className="num">{pct(c.cpu_percent)}</td>
+                              <td className="num">
                                 {bytes(c.memory_bytes)}
                                 <small>Limit {bytes(c.memory_limit)}</small>
                               </td>
@@ -1588,7 +1604,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                                     </button>
                                   </div>
                                 ) : (
-                                  "—"
+                                  "n/a"
                                 )}
                               </td>
                             </tr>
@@ -1721,7 +1737,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                     <strong>
                       {ciKnown
                         ? pipelines.filter((p) => p.status === "running").length
-                        : "—"}
+                        : "n/a"}
                     </strong>
                     <span>Running pipelines</span>
                   </div>
@@ -1730,7 +1746,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                     <strong>
                       {ciKnown
                         ? jobs.filter((j) => j.status === "pending").length
-                        : "—"}
+                        : "n/a"}
                     </strong>
                     <span>Pending jobs in sample</span>
                   </div>
@@ -1739,13 +1755,13 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                     <strong>
                       {runnerMetrics.gitlab_runner_concurrent ??
                         sources.runner?.data?.facts?.concurrent ??
-                        "—"}
+                        "n/a"}
                     </strong>
                     <span>Configured runner slots</span>
                   </div>
                   <div>
                     <Server />
-                    <strong>{gitlab?.projects?.length ?? "—"}</strong>
+                    <strong>{gitlab?.projects?.length ?? "n/a"}</strong>
                     <span>Connected projects</span>
                   </div>
                 </div>
@@ -1767,8 +1783,8 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                                 <th>Pipeline / project</th>
                                 <th>Branch</th>
                                 <th>Status</th>
-                                <th>Duration</th>
-                                <th>Queue duration</th>
+                                <th className="num">Duration</th>
+                                <th className="num">Queue duration</th>
                                 <th>Created</th>
                               </tr>
                             </thead>
@@ -1790,12 +1806,16 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                                   <td>
                                     <Badge value={p.status} />
                                   </td>
-                                  <td>{duration(p.duration)}</td>
-                                  <td>{duration(p.queued_duration)}</td>
+                                  <td className="num">
+                                    {duration(p.duration)}
+                                  </td>
+                                  <td className="num">
+                                    {duration(p.queued_duration)}
+                                  </td>
                                   <td>
                                     {p.created_at
                                       ? new Date(p.created_at).toLocaleString()
-                                      : "—"}
+                                      : "n/a"}
                                   </td>
                                 </tr>
                               ))}
@@ -1850,8 +1870,8 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                                 <th>Job</th>
                                 <th>Pipeline</th>
                                 <th>Status</th>
-                                <th>Execution</th>
-                                <th>Queue</th>
+                                <th className="num">Execution</th>
+                                <th className="num">Queue</th>
                                 <th>Runner</th>
                               </tr>
                             </thead>
@@ -1873,8 +1893,12 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                                   <td>
                                     <Badge value={j.status} />
                                   </td>
-                                  <td>{duration(j.duration)}</td>
-                                  <td>{duration(j.queued_duration)}</td>
+                                  <td className="num">
+                                    {duration(j.duration)}
+                                  </td>
+                                  <td className="num">
+                                    {duration(j.queued_duration)}
+                                  </td>
                                   <td>{j.runner || "Unassigned"}</td>
                                 </tr>
                               ))}
@@ -2089,7 +2113,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                       Set <code>OPSDECK_ACTIONS=true</code> to permit
                       managed-container actions. Label eligible containers{" "}
                       <code>opsdeck.managed=true</code>. History retention:{" "}
-                      {snapshot?.retention_days ?? "—"} days. Audit action
+                      {snapshot?.retention_days ?? "n/a"} days. Audit action
                       records are retained.
                     </p>
                   </article>

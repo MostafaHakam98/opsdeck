@@ -49,10 +49,13 @@
   background: var(--surface);
   color: var(--text);
 }
-.topbar > .host-switcher,
 .fleet-topbar > .host-switcher {
   flex: 1;
   max-width: 640px;
+}
+.topbar > .host-switcher {
+  flex: 0 1 380px;
+  min-width: 160px;
 }
 @media (max-width: 600px) {
   .topbar {
@@ -65,7 +68,7 @@
   .topbar > .host-switcher {
     flex-basis: 100%;
   }
-  .topbar > div {
+  .topbar > .topbar-tools {
     margin-left: auto;
   }
 }

@@ -607,10 +607,11 @@ export function FleetApp({
           {(view === "fleet" || view === "agent") && selected && (
             <>
               <button
-                className="fleet-back secondary"
+                type="button"
+                className="fleet-back"
                 onClick={() => navigate("fleet")}
               >
-                <ArrowLeft size={16} />
+                <ArrowLeft size={15} aria-hidden="true" />
                 Back to hosts
               </button>
               {detail ? (

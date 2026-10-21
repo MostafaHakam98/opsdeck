@@ -81,77 +81,83 @@ export function HostSettings({
   return (
     <Section title="Host settings" className="fleet-settings">
       <form
-        className="fleet-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (dirty && valid) void save();
         }}
       >
-        <label>
-          Name
-          <input
-            required
-            maxLength={120}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
-        <label>
-          Cluster
-          <input
-            required
-            maxLength={120}
-            list="fleet-cluster-options"
-            value={cluster}
-            onChange={(e) => setCluster(e.target.value)}
-          />
-          <datalist id="fleet-cluster-options">
-            {clusters.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-        </label>
-        <label className="fleet-form-wide">
-          Notes
-          <textarea
-            rows={3}
-            maxLength={NOTES_MAX}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Rack, owner, hardware quirks or planned work"
-          />
-          <small>
-            {notes.length} of {NOTES_MAX} characters. Notes are searchable on
-            the fleet page.
-          </small>
-        </label>
-        <label className="fleet-switch fleet-form-wide">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={maintenance}
-            onChange={(e) => setMaintenance(e.target.checked)}
-          />
-          <span>
-            <strong>Maintenance mode</strong>
-            <small>
-              While on, this host raises no alerts and shows as maintenance.
-              Telemetry is still recorded.
+        <div className="fleet-form">
+          <label>
+            <span className="fleet-label">Name</span>
+            <input
+              required
+              maxLength={120}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label>
+            <span className="fleet-label">Cluster</span>
+            <input
+              required
+              maxLength={120}
+              list="fleet-cluster-options"
+              value={cluster}
+              onChange={(e) => setCluster(e.target.value)}
+            />
+            <datalist id="fleet-cluster-options">
+              {clusters.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </label>
+          <label className="fleet-form-wide">
+            <span className="fleet-label">Notes</span>
+            <textarea
+              rows={3}
+              maxLength={NOTES_MAX}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Rack, owner, hardware quirks or planned work"
+            />
+            <small className="fleet-hint">
+              <span>Notes are searchable on the fleet page.</span>
+              <span>
+                {notes.length} / {NOTES_MAX}
+              </span>
             </small>
-          </span>
-        </label>
-        <div className="fleet-actions fleet-form-wide">
-          <button
-            type="submit"
-            className="primary"
-            disabled={busy || !dirty || !valid}
-          >
-            {busy ? "Saving..." : "Save settings"}
-          </button>
+          </label>
+          <div className="fleet-switch fleet-form-wide">
+            <span>
+              <label htmlFor="fleet-maintenance">Maintenance mode</label>
+              <small id="fleet-maintenance-help">
+                While on, this host raises no alerts and shows as maintenance.
+                Telemetry is still recorded.
+              </small>
+            </span>
+            <input
+              id="fleet-maintenance"
+              type="checkbox"
+              role="switch"
+              aria-describedby="fleet-maintenance-help"
+              checked={maintenance}
+              onChange={(e) => setMaintenance(e.target.checked)}
+            />
+          </div>
+        </div>
+        <div className="fleet-form-foot">
+          {result && (
+            <span
+              role={result.ok ? "status" : "alert"}
+              className={`fleet-form-result ${result.ok ? "tone-good" : "tone-bad"}`}
+            >
+              {result.text}
+            </span>
+          )}
           {dirty && !busy && (
             <button
               type="button"
-              className="secondary"
+              className="ghost"
               onClick={() => {
                 // Discard reloads the latest server values.
                 const latest = values(node);
@@ -166,14 +172,13 @@ export function HostSettings({
               Discard changes
             </button>
           )}
-          {result && (
-            <span
-              role={result.ok ? "status" : "alert"}
-              className={result.ok ? "tone-good" : "tone-bad"}
-            >
-              {result.text}
-            </span>
-          )}
+          <button
+            type="submit"
+            className="primary"
+            disabled={busy || !dirty || !valid}
+          >
+            {busy ? "Saving..." : "Save settings"}
+          </button>
         </div>
       </form>
     </Section>
@@ -198,24 +203,32 @@ export function DangerZone({
 }) {
   const matches = confirm === node.name;
   return (
-    <Section title="Agent access" className="fleet-danger">
-      <p className="fleet-context">
-        Danger zone. Rotate replaces this host's credential and disconnects the
-        running agent until it has the new one. Revoke stops it from sending
-        telemetry. Retained observations remain available.
-      </p>
-      <label>
-        Type the host name to confirm
-        <input
-          aria-label="Confirm host name"
-          value={confirm}
-          onChange={(e) => onConfirm(e.target.value)}
-          placeholder={node.name}
-          autoComplete="off"
-        />
-      </label>
-      <div className="fleet-actions">
+    <Section
+      title="Agent access"
+      className="fleet-danger"
+      actions={<span className="fleet-danger-tag">Danger zone</span>}
+    >
+      <div className="fleet-danger-body">
+        <p>
+          Rotate replaces this host's credential and disconnects the running
+          agent until it has the new one. Revoke stops it from sending
+          telemetry. Retained observations remain available.
+        </p>
+        <label>
+          <span className="fleet-label">Type the host name to confirm</span>
+          <input
+            aria-label="Confirm host name"
+            value={confirm}
+            onChange={(e) => onConfirm(e.target.value)}
+            placeholder={node.name}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </label>
+      </div>
+      <div className="fleet-form-foot">
         <button
+          type="button"
           className="secondary"
           disabled={busy || !matches}
           onClick={onRotate}
@@ -223,6 +236,7 @@ export function DangerZone({
           Rotate credential
         </button>
         <button
+          type="button"
           className="danger"
           disabled={busy || !matches || node.status === "revoked"}
           onClick={onRevoke}

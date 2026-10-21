@@ -13,6 +13,12 @@ import {
 import { Box, ClipboardList, Search, Server } from "lucide-react";
 import { bytes, duration, safeUrl, type Source } from "../../lib/api";
 import { SpeedupReport } from "./SpeedupReport";
+import {
+  axisProps,
+  barCursor,
+  chartTooltip,
+  gridProps,
+} from "../../components/chartTheme";
 import { Pager } from "../../components/Pager";
 import { tone } from "../../components/Status";
 
@@ -50,13 +56,15 @@ function Section({
 }
 function Pill({ value }: { value: string }) {
   return (
-    <span className={`badge ${tone(value)}`}>{value.replaceAll("_", " ")}</span>
+    <span className={`badge ${tone(value)}`}>
+      <i />
+      {value.replaceAll("_", " ")}
+    </span>
   );
 }
 function Empty({ text }: { text: string }) {
   return (
     <div className="empty">
-      <ClipboardList size={25} />
       <p>{text}</p>
     </div>
   );
@@ -127,10 +135,10 @@ export function SurveyPage({ source }: { source?: Source }) {
                   <tr>
                     <th>Pipeline</th>
                     <th>Outcome</th>
-                    <th>Passed jobs</th>
-                    <th>Sum of job time</th>
-                    <th>Observed wall time</th>
-                    <th>First-job wait</th>
+                    <th className="num">Passed jobs</th>
+                    <th className="num">Sum of job time</th>
+                    <th className="num">Observed wall time</th>
+                    <th className="num">First-job wait</th>
                     <th>Evidence</th>
                   </tr>
                 </thead>
@@ -151,14 +159,14 @@ export function SurveyPage({ source }: { source?: Source }) {
                       <td>
                         <Pill value={b.status} />
                       </td>
-                      <td>
+                      <td className="num">
                         {b.passed_jobs == null
-                          ? "—"
+                          ? "n/a"
                           : `${b.passed_jobs}/${b.total_jobs}`}
                       </td>
-                      <td>{duration(b.runner_seconds)}</td>
-                      <td>{duration(b.wall_seconds)}</td>
-                      <td>{duration(b.queue_seconds)}</td>
+                      <td className="num">{duration(b.runner_seconds)}</td>
+                      <td className="num">{duration(b.wall_seconds)}</td>
+                      <td className="num">{duration(b.queue_seconds)}</td>
                       <td>
                         {b.evidence}
                         {b.url && (
@@ -200,40 +208,35 @@ export function SurveyPage({ source }: { source?: Source }) {
                     data={pageRows}
                     margin={{ top: 20, right: 20, left: 0, bottom: 10 }}
                   >
-                    <CartesianGrid
-                      vertical={false}
-                      stroke="var(--chart-grid)"
-                    />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
-                      stroke="var(--border-strong)"
-                    />
-                    <YAxis
-                      unit="m"
-                      tick={{ fill: "var(--chart-tick)", fontSize: 11 }}
-                      stroke="var(--border-strong)"
-                    />
+                    <CartesianGrid {...gridProps} vertical={false} />
+                    <XAxis dataKey="label" {...axisProps} />
+                    <YAxis unit="m" width={48} {...axisProps} />
                     <Tooltip
+                      {...chartTooltip}
                       formatter={(v: any) => `${Number(v).toFixed(1)} minutes`}
-                      cursor={{ fill: "var(--surface-3)" }}
-                      contentStyle={{
-                        background: "var(--surface)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        color: "var(--text)",
+                      cursor={barCursor}
+                    />
+                    <Legend
+                      iconType="square"
+                      iconSize={10}
+                      wrapperStyle={{
+                        fontSize: 12,
+                        color: "var(--text-muted)",
                       }}
                     />
-                    <Legend wrapperStyle={{ color: "var(--text-muted)" }} />
                     <Bar
                       dataKey="execution"
                       name="Observed execution wall time"
                       fill="var(--series-1)"
+                      radius={[3, 3, 0, 0]}
+                      isAnimationActive={false}
                     />
                     <Bar
                       dataKey="queue"
                       name="First-job queue wait"
                       fill="var(--series-4)"
+                      radius={[3, 3, 0, 0]}
+                      isAnimationActive={false}
                     />
                   </BarChart>
                 </ResponsiveContainer>
@@ -258,9 +261,11 @@ export function SurveyPage({ source }: { source?: Source }) {
                   <tr>
                     <th>Job</th>
                     {measured.map((b: any) => (
-                      <th key={b.pipeline_id}>#{b.pipeline_id}</th>
+                      <th className="num" key={b.pipeline_id}>
+                        #{b.pipeline_id}
+                      </th>
                     ))}
-                    <th>Final vs baseline</th>
+                    <th className="num">Final vs baseline</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -278,11 +283,13 @@ export function SurveyPage({ source }: { source?: Source }) {
                           {j.note && <small>{j.note}</small>}
                         </td>
                         {j.seconds.map((s: number | null, i: number) => (
-                          <td key={i}>{s == null ? "—" : `${s}s`}</td>
+                          <td className="num" key={i}>
+                            {s == null ? "n/a" : `${s}s`}
+                          </td>
                         ))}
-                        <td>
+                        <td className="num">
                           {change == null
-                            ? "—"
+                            ? "n/a"
                             : `${Math.abs(change).toFixed(1)}% ${change >= 0 ? "faster" : "slower"}`}
                         </td>
                       </tr>
@@ -332,8 +339,8 @@ export function SurveyPage({ source }: { source?: Source }) {
                       <tr>
                         <th>Job / stage</th>
                         <th>Outcome</th>
-                        <th>Execution</th>
-                        <th>Queue</th>
+                        <th className="num">Execution</th>
+                        <th className="num">Queue</th>
                         <th>Runner</th>
                       </tr>
                     </thead>
@@ -347,8 +354,8 @@ export function SurveyPage({ source }: { source?: Source }) {
                           <td>
                             <Pill value={j.status} />
                           </td>
-                          <td>{duration(j.duration)}</td>
-                          <td>{duration(j.queued_duration)}</td>
+                          <td className="num">{duration(j.duration)}</td>
+                          <td className="num">{duration(j.queued_duration)}</td>
                           <td>{j.runner || "Not recorded"}</td>
                         </tr>
                       ))}
@@ -551,17 +558,17 @@ export function RunnerInventory({
       <div className="summary-row">
         <div>
           <Server />
-          <strong>{docker?.ci_running ?? "—"}</strong>
+          <strong>{docker?.ci_running ?? "n/a"}</strong>
           <span>Running CI containers</span>
         </div>
         <div>
           <Box />
-          <strong>{docker?.images?.length ?? "—"}</strong>
+          <strong>{docker?.images?.length ?? "n/a"}</strong>
           <span>Local image IDs · aliases share layers</span>
         </div>
         <div>
           <Box />
-          <strong>{docker?.storage?.volumes_count ?? "—"}</strong>
+          <strong>{docker?.storage?.volumes_count ?? "n/a"}</strong>
           <span>Docker / runner volumes</span>
         </div>
         <div>
@@ -642,7 +649,7 @@ export function RunnerInventory({
                   <th>State / role</th>
                   <th>Image</th>
                   <th>Job / project</th>
-                  <th>CPU / RAM</th>
+                  <th className="num">CPU / RAM</th>
                 </tr>
               </thead>
               <tbody>
@@ -650,7 +657,9 @@ export function RunnerInventory({
                   .slice((workerCurrentPage - 1) * 20, workerCurrentPage * 20)
                   .map((c: any) => (
                     <tr key={c.id}>
-                      <td>{c.name}</td>
+                      <td className="truncate" title={c.name}>
+                        {c.name}
+                      </td>
                       <td>
                         <Pill value={c.state} />
                         <small>
@@ -672,9 +681,9 @@ export function RunnerInventory({
                             c.ci_metadata?.project_id}
                         </small>
                       </td>
-                      <td>
+                      <td className="num">
                         {c.cpu_percent == null
-                          ? "—"
+                          ? "n/a"
                           : `${c.cpu_percent.toFixed(1)}%`}{" "}
                         / {bytes(c.memory_bytes)}
                       </td>
@@ -711,7 +720,7 @@ export function RunnerInventory({
         title="Observed CI container history"
         note="Retained across application restarts"
       >
-        <p className="muted">
+        <p className="panel-description">
           Sampled every 15 seconds. Short-lived containers can be missed;
           disappearance does not establish a job outcome.
         </p>
@@ -764,7 +773,7 @@ export function RunnerInventory({
                   <th>Container / image</th>
                   <th>Last observed state</th>
                   <th>First / last seen</th>
-                  <th>Observed CPU / RAM peaks</th>
+                  <th className="num">Observed CPU / RAM peaks</th>
                 </tr>
               </thead>
               <tbody>
@@ -772,9 +781,9 @@ export function RunnerInventory({
                   .slice((historyCurrentPage - 1) * 20, historyCurrentPage * 20)
                   .map((c: any) => (
                     <tr key={c.id}>
-                      <td>
-                        {c.name}
-                        <small>{c.image}</small>
+                      <td className="truncate">
+                        <span title={c.name}>{c.name}</span>
+                        <small title={c.image}>{c.image}</small>
                       </td>
                       <td>
                         <Pill value={c.state} />
@@ -786,8 +795,10 @@ export function RunnerInventory({
                           {new Date(c.last_seen * 1000).toLocaleString()}
                         </small>
                       </td>
-                      <td>
-                        {c.cpu_peak == null ? "—" : `${c.cpu_peak.toFixed(1)}%`}{" "}
+                      <td className="num">
+                        {c.cpu_peak == null
+                          ? "n/a"
+                          : `${c.cpu_peak.toFixed(1)}%`}{" "}
                         / {bytes(c.memory_peak)}
                       </td>
                     </tr>
@@ -875,9 +886,9 @@ export function RunnerInventory({
               <thead>
                 <tr>
                   <th>Tags / image ID</th>
-                  <th>Size</th>
+                  <th className="num">Size</th>
                   <th>Created</th>
-                  <th>Container references</th>
+                  <th className="num">Container references</th>
                 </tr>
               </thead>
               <tbody>
@@ -893,13 +904,13 @@ export function RunnerInventory({
                           : "Untagged"}
                         <small>{i.id.slice(0, 24)}</small>
                       </td>
-                      <td>{bytes(i.size_bytes)}</td>
+                      <td className="num">{bytes(i.size_bytes)}</td>
                       <td>
                         {i.created
                           ? new Date(i.created * 1000).toLocaleString()
-                          : "—"}
+                          : "n/a"}
                       </td>
-                      <td>{i.referencing_containers}</td>
+                      <td className="num">{i.referencing_containers}</td>
                     </tr>
                   ))}
               </tbody>
@@ -976,19 +987,23 @@ export function RunnerInventory({
                     <tr>
                       <th>Volume</th>
                       <th>Driver</th>
-                      <th>Size</th>
-                      <th>References</th>
+                      <th className="num">Size</th>
+                      <th className="num">References</th>
                       <th>Host path</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pageRows.map((v: any) => (
                       <tr key={v.name}>
-                        <td>{v.name}</td>
+                        <td className="truncate" title={v.name}>
+                          {v.name}
+                        </td>
                         <td>{v.driver}</td>
-                        <td>{bytes(v.size_bytes)}</td>
-                        <td>{v.references ?? "—"}</td>
-                        <td>{v.mountpoint}</td>
+                        <td className="num">{bytes(v.size_bytes)}</td>
+                        <td className="num">{v.references ?? "n/a"}</td>
+                        <td className="truncate" title={v.mountpoint}>
+                          {v.mountpoint}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

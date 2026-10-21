@@ -176,7 +176,11 @@ function StatusStrip({
         <Readout label="Average GPU" value={summary?.avg_gpu} />
         <div>
           <dt>CI jobs running</dt>
-          <dd>{summary?.ci_running ?? "No data"}</dd>
+          {summary?.ci_running == null ? (
+            <dd className="is-na">No data</dd>
+          ) : (
+            <dd>{summary.ci_running}</dd>
+          )}
           <small>Sum across online hosts</small>
         </div>
         <div>
@@ -207,7 +211,11 @@ function Readout({
   return (
     <div>
       <dt>{label}</dt>
-      <dd>{value == null ? "No data" : percentText(value, 0)}</dd>
+      {value == null ? (
+        <dd className="is-na">No data</dd>
+      ) : (
+        <dd>{percentText(value, 0)}</dd>
+      )}
       <small>Across online hosts</small>
     </div>
   );
@@ -249,8 +257,10 @@ function AlertsPanel({
                   <span className="visually-hidden">
                     {alert.severity === "critical" ? "Critical: " : "Warning: "}
                   </span>
-                  <strong>{alert.node_name}</strong>
-                  <span>{alert.title}</span>
+                  <span className="fleet-alert-line">
+                    <strong>{alert.node_name}</strong>
+                    <span>{alert.title}</span>
+                  </span>
                   <small>{alert.detail}</small>
                 </span>
               </button>
@@ -272,7 +282,7 @@ function AlertsPanel({
         </div>
       )}
       {alerts.length > LIMIT && (
-        <p className="fleet-context fleet-pad">
+        <p className="fleet-footnote">
           Showing the first {LIMIT} of {alerts.length}. Search or filter by
           cluster to narrow the list.
         </p>

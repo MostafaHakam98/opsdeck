@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { bytes, duration, pct, safeUrl } from "./api";
 describe("operator-facing metric formatting", () => {
   it("distinguishes unavailable measurements from zero", () => {
-    expect(bytes(null)).toBe("—");
+    expect(bytes(null)).toBe("n/a");
     expect(bytes(0)).toBe("0 B");
-    expect(pct(null)).toBe("—");
+    expect(pct(null)).toBe("n/a");
     expect(pct(0)).toBe("0.0%");
   });
   it("formats capacities and durations consistently", () => {

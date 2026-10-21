@@ -220,6 +220,7 @@ export function WorkloadExplorer({
                         </td>
                         <td>
                           <span className={`badge ${tone(row.status)}`}>
+                            <i />
                             {row.status.replaceAll("_", " ")}
                           </span>
                           <small>
@@ -267,7 +268,7 @@ export function WorkloadExplorer({
                           </button>
                           <small>ID {row.id}</small>
                         </td>
-                        <td>{row.running_containers ?? "—"}</td>
+                        <td>{row.running_containers ?? "n/a"}</td>
                         <td>{row.jobs}</td>
                         <td>{row.pipelines}</td>
                         <td>{row.images}</td>

@@ -251,7 +251,11 @@ function HostCard({
         <Status value={state} />
       </header>
       <p className="host-card-meta">
-        <code>{node.hostname || "Awaiting agent"}</code>
+        {node.hostname ? (
+          <code>{node.hostname}</code>
+        ) : (
+          <span className="fleet-na">Awaiting agent</span>
+        )}
         <span>{node.cluster}</span>
       </p>
       <div className="host-card-bars">

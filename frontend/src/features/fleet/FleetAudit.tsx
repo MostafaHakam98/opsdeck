@@ -143,21 +143,24 @@ export function FleetAudit({
                   </td>
                 </tr>
               ))}
+              {!rows.length && (
+                <tr className="fleet-empty-row">
+                  <td colSpan={4}>
+                    {events === null
+                      ? "Loading events..."
+                      : events.length
+                        ? "No events match these filters."
+                        : query
+                          ? "No events match this search. Try a shorter term."
+                          : "No access changes recorded yet."}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-        {events === null ? (
-          <p className="fleet-empty">Loading events...</p>
-        ) : !rows.length ? (
-          <p className="fleet-empty">
-            {events.length
-              ? "No events match these filters."
-              : query
-                ? "No events match this search. Try a shorter term."
-                : "No access changes recorded yet."}
-          </p>
-        ) : (
-          <p className="fleet-context fleet-pad">
+        {rows.length > 0 && events && (
+          <p className="fleet-footnote">
             Showing {rows.length} of the newest {events.length} events
             {query ? ` matching "${query}"` : ""}.
           </p>

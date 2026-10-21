@@ -210,13 +210,22 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
   await page.getByRole("button", { name: "Saved, view host" }).click();
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
   await expect(page.getByText("37.0%", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Containers", exact: true }).click();
+  await page.getByRole("tab", { name: "Containers", exact: true }).click();
   await expect(
     page.getByRole("cell", { name: "ci-job-123", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Runner & services", exact: true })
-    .click();
+  const runnerTab = page.getByRole("tab", {
+    name: "Runner & services",
+    exact: true,
+  });
+  await runnerTab.click();
+  await expect(runnerTab).toHaveAttribute("aria-selected", "true");
+  await runnerTab.press("ArrowLeft");
+  await expect(
+    page.getByRole("tab", { name: "Containers", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(runnerTab).toBeFocused();
   await expect(
     page.getByRole("cell", { name: "gitlab-runner.service", exact: true }),
   ).toBeVisible();

@@ -125,8 +125,15 @@ const PulseRow = memo(function PulseRow({
         {values.map((value, i) => (
           <i
             key={i}
-            className={i === activeIndex ? "active" : undefined}
-            style={{ background: heatColor(value) }}
+            className={
+              [
+                value == null ? "is-empty" : "",
+                i === activeIndex ? "active" : "",
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
+            style={value == null ? undefined : { background: heatColor(value) }}
           />
         ))}
       </span>

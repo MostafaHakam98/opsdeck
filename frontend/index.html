@@ -3,11 +3,99 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#17304c" />
-    <title>OpsDeck · Infrastructure workspace</title>
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="theme-color"
+      content="#eef1f6"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#121826"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta
+      name="description"
+      content="Health and capacity for your CI runner hosts."
+    />
+    <title>OpsDeck</title>
+    <style>
+      /* Boot screen: painted from the HTML alone, before any script or stylesheet arrives. */
+      html {
+        background: #eef1f6;
+        color: #576378;
+      }
+      @media (prefers-color-scheme: dark) {
+        html {
+          background: #121826;
+          color: #9aa6bd;
+        }
+      }
+      html[data-theme="light"] {
+        background: #eef1f6;
+        color: #576378;
+      }
+      html[data-theme="dark"] {
+        background: #121826;
+        color: #9aa6bd;
+      }
+      body {
+        margin: 0;
+      }
+      .boot {
+        min-height: 100vh;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 14px;
+        font:
+          14px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      .boot-mark {
+        display: grid;
+        grid-template-columns: repeat(3, 6px);
+        gap: 3px;
+      }
+      .boot-mark i {
+        width: 6px;
+        height: 6px;
+        border-radius: 1.5px;
+        background: #8b8cff;
+        opacity: 0.35;
+        animation: boot-pulse 1.2s ease-in-out infinite;
+      }
+      .boot-mark i:nth-child(3n + 2) {
+        animation-delay: 0.15s;
+      }
+      .boot-mark i:nth-child(3n) {
+        animation-delay: 0.3s;
+      }
+      @keyframes boot-pulse {
+        50% {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-mark i {
+          animation: none;
+          opacity: 0.7;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot" role="status">
+        <div class="boot-mark" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <span>Loading OpsDeck</span>
+      </div>
+    </div>
     <script type="module" src="/src/app/main.tsx"></script>
   </body>
 </html>

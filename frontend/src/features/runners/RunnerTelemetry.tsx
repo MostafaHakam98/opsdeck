@@ -42,7 +42,7 @@ export function RunnerTelemetry({
         <div>
           <span>Global job limit · live</span>
           <strong>
-            {healthy ? (metrics.gitlab_runner_concurrent ?? "—") : "—"}
+            {healthy ? (metrics.gitlab_runner_concurrent ?? "n/a") : "n/a"}
           </strong>
           <small>
             Running CI container count also includes helper containers

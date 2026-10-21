@@ -598,7 +598,9 @@ test("operator capacity and local archive workflows require reviewed confirmatio
   ).toBeDisabled();
   await page.getByLabel("Operation confirmation").fill("set workers 12");
   await page.getByRole("button", { name: "Apply reviewed operation" }).click();
-  await expect(page.getByRole("status")).toContainText("Worker limits saved");
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
+    "Worker limits saved",
+  );
   await page.getByLabel("Saved image archive", { exact: true }).setInputFiles({
     name: "usb-image.tar",
     mimeType: "application/x-tar",
@@ -855,7 +857,7 @@ test("real API captures, compares and exports manual survey checkpoints", async 
   await page
     .getByRole("button", { name: "Save current checkpoint", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
     `Checkpoint saved: Before ${suffix}`,
   );
   await page
@@ -864,7 +866,7 @@ test("real API captures, compares and exports manual survey checkpoints", async 
   await page
     .getByRole("button", { name: "Save current checkpoint", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
     `Checkpoint saved: After ${suffix}`,
   );
   const before = await page

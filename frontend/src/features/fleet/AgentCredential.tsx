@@ -66,6 +66,8 @@ export function AgentCredential({
         </p>
         <div className="fleet-actions">
           <button
+            type="button"
+            className="secondary"
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(configuration);
@@ -78,7 +80,7 @@ export function AgentCredential({
             <Copy size={16} />
             {copied ? "Copied" : "Copy configuration"}
           </button>
-          <button className="primary" onClick={onSaved}>
+          <button type="button" className="primary" onClick={onSaved}>
             Saved, view host
           </button>
         </div>
