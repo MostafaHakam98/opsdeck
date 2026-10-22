@@ -16,6 +16,10 @@ export type Node = {
   /** Added by the command-center backend; absent on older servers. */
   notes?: string;
   maintenance?: boolean;
+  /** Latest agent message per source, bounded by the server. */
+  source_messages?: Record<string, string>;
+  /** Collectors this host does not run; they never raise alerts. */
+  ignored_sources?: string[];
 };
 export type Summary = {
   hosts: number;

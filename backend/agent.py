@@ -133,7 +133,7 @@ async def run(settings):
     workspace.validate()
     spool = Spool(settings)
     state = {name: {"status": "collecting", "data": None, "message": "Waiting for the first sample", "updated_at": None} for name in SOURCE_NAMES}
-    host, engine = HostCollector(local.host_root, local.procfs_path, local.scope), DockerCollector()
+    host, engine = HostCollector(local.host_root, local.procfs_path, local.scope), DockerCollector(local.docker_timeout)
     collectors = {"host": host.collect, "docker": engine.collect, "gpu": gpu_collect,
                   "runner": lambda: runner_collect(local), "services": lambda: services_collect(local)}
     stop = asyncio.Event()

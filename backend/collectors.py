@@ -12,7 +12,7 @@ import socket
 import subprocess
 import time
 from types import SimpleNamespace
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import docker
 import httpx
@@ -27,9 +27,22 @@ def source(data=None, status="healthy", message=None):
     return {"status": status, "message": message, "updated_at": time.time(), "data": data}
 
 
+def stderr_line(exc):
+    """First non-empty stderr line without control characters, bounded for display."""
+    stderr = getattr(exc, "stderr", None)
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode(errors="replace")
+    for line in (stderr if isinstance(stderr, str) else "").splitlines():
+        line = " ".join(re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", line).split())
+        if line:
+            return line[:160]
+    return ""
+
+
 def failure(exc, hint):
     # Exception strings may contain access tokens or URLs; return a controlled message.
-    return source(status="unavailable", message=f"{hint} ({type(exc).__name__})")
+    detail = stderr_line(exc) if isinstance(exc, subprocess.CalledProcessError) else ""
+    return source(status="unavailable", message=f"{hint} ({type(exc).__name__})" + (": " + detail if detail else ""))
 
 
 def pressure(procfs_path="/proc"):
@@ -215,6 +228,10 @@ def services_collect(settings):
                     "memory_bytes": numeric("MemoryCurrent"), "cpu_seconds": numeric("CPUUsageNSec") / 1e9 if numeric("CPUUsageNSec") is not None else None})
         return source(rows)
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
+        stderr = exc.stderr if isinstance(exc, subprocess.CalledProcessError) and isinstance(exc.stderr, str) else ""
+        if settings.host_root and any(marker in stderr for marker in ("Failed to connect to bus", "Permission denied", "No such file", "not been booted with systemd")):
+            return source(status="unavailable", message="The container cannot reach the host's systemd bus. Run the host service exporter "
+                          "(deploy/export_services.py with compose.services.yaml), or set OPSDECK_SERVICES= in the agent environment to stop monitoring services.")
         return failure(exc, "Systemd service status unavailable on this host")
 
 
@@ -252,101 +269,186 @@ def ci_environment(environment):
     return result
 
 
+DOCKER_ERRORS = (docker.errors.DockerException, OSError)  # requests timeouts and connection errors are OSError
+
+
+def root_cause(exc):
+    # docker.from_env wraps the version probe's error in a DockerException.
+    return exc.__cause__ if isinstance(exc, docker.errors.DockerException) and exc.__cause__ else exc
+
+
+def timed_out(exc):
+    exc = root_cause(exc)
+    return any("Timeout" in kind.__name__ for kind in type(exc).__mro__) or "timed out" in str(exc).lower()
+
+
+def ago(seconds):
+    seconds = max(0, seconds)
+    return f"{seconds:.0f} s ago" if seconds < 60 else f"{seconds // 60:.0f} min ago"
+
+
 class DockerCollector:
-    def __init__(self):
+    """Listing containers is essential; every other call degrades the source instead of failing it."""
+    def __init__(self, timeout=10):
+        self.timeout = timeout
         self.previous = {}
         self.storage = None
-        self.storage_at = 0
+        self.storage_tried = None
+        self.storage_error = None
         self.images = []
         self.images_at = 0
+        self.images_tried = None
+        self.images_error = None
         self.ci_metadata = {}
+
+    def problem(self, exc, phase):
+        cause = root_cause(exc)
+        if isinstance(cause, PermissionError) or "Permission denied" in str(exc):
+            return "Docker socket permission denied; add the agent to the socket's group (OPSDECK_DOCKER_GID)"
+        if timed_out(exc):
+            return f"Docker API did not answer within {self.timeout}s while {phase} ({type(cause).__name__}). Check how long 'docker ps' takes on the host."
+        return f"Docker daemon unavailable while {phase} ({type(cause).__name__}); check the service and socket permissions"
+
+    @staticmethod
+    def gap(what, exc, age=None):
+        status = "timed out" if timed_out(exc) else f"unavailable ({type(root_cause(exc)).__name__})"
+        return f"{what} {status}; " + (f"showing the last result from {ago(age)}" if age is not None else "no earlier result to show")
 
     def collect(self):
         try:
-            client = docker.from_env(timeout=4)
+            client = docker.from_env(timeout=self.timeout)
+        except DOCKER_ERRORS as exc:
+            return source(status="unavailable", message=self.problem(exc, "connecting to the daemon"))
+        try:
+            try:
+                containers = client.api.containers(all=True)
+            except DOCKER_ERRORS as exc:
+                return source(status="unavailable", message=self.problem(exc, "listing containers"))
+            gaps = []
             try:
                 info = client.info()
-                containers = client.api.containers(all=True)
-                running = [c for c in containers if c["State"] == "running"][:64]
-                current_stats = {}
-                def stats(container):
-                    try:
-                        return container["Id"], client.api.stats(container["Id"], stream=False, one_shot=True)
-                    except docker.errors.DockerException:
-                        return container["Id"], None
-                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-                    current_stats.update(pool.map(stats, running))
-                rows = []
-                ci_candidates = [c for c in containers if any(k.startswith("com.gitlab.gitlab-runner") for k in (c.get("Labels") or {})) or any(n.lstrip("/").startswith("runner-") for n in c.get("Names", []))]
-                def metadata_for(container):
-                    try:
-                        environment = client.api.inspect_container(container["Id"]).get("Config", {}).get("Env") or []
-                        return container["Id"], ci_environment(environment)
-                    except docker.errors.DockerException:
-                        return container["Id"], None
-                missing = [c for c in ci_candidates if c["Id"] not in self.ci_metadata][:16]
-                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-                    for identifier, metadata in pool.map(metadata_for, missing):
-                        if metadata is not None:
-                            self.ci_metadata[identifier] = metadata
-                for c in containers[:200]:
-                    s = current_stats.get(c["Id"])
-                    cpu = None
-                    memory = None
-                    limit = None
-                    if s:
-                        current = s.get("cpu_stats", {})
-                        previous = self.previous.get(c["Id"], {})
-                        cpu_delta = current.get("cpu_usage", {}).get("total_usage", 0) - previous.get("cpu_usage", {}).get("total_usage", 0)
-                        system_delta = current.get("system_cpu_usage", 0) - previous.get("system_cpu_usage", 0)
-                        if previous and system_delta > 0 and cpu_delta >= 0:
-                            cpu = cpu_delta / system_delta * current.get("online_cpus", 1) * 100
-                        self.previous[c["Id"]] = current
-                        m = s.get("memory_stats", {})
-                        memory = max(0, m.get("usage", 0) - m.get("stats", {}).get("inactive_file", 0))
-                        limit = m.get("limit")
-                    labels = c.get("Labels") or {}
-                    ci_fields = {"job_id": "job.id", "job_name": "job.name", "project_id": "job.project.id", "project_path": "job.project.path", "runner_id": "runner.id", "role": "type"}
-                    metadata = {**self.ci_metadata.get(c["Id"], {}), **{key: labels["com.gitlab.gitlab-runner." + field] for key, field in ci_fields.items() if "com.gitlab.gitlab-runner." + field in labels}}
-                    rows.append({"id": c["Id"], "name": (c.get("Names") or [c["Id"][:12]])[0].lstrip("/"), "image": c["Image"],
-                        "image_id": c.get("ImageID"), "state": c["State"], "status": c["Status"], "created": c["Created"], "cpu_percent": cpu,
-                        "memory_bytes": memory, "memory_limit": limit, "managed": labels.get("opsdeck.managed") == "true",
-                        "ci": any(k.startswith("com.gitlab.gitlab-runner") for k in labels) or any(n.lstrip("/").startswith("runner-") for n in c.get("Names", [])), "ci_metadata": metadata,
-                        "ports": [{"private": p.get("PrivatePort"), "public": p.get("PublicPort"), "type": p.get("Type")} for p in c.get("Ports", [])]})
-                self.previous = {k: v for k, v in self.previous.items() if k in current_stats}
-                visible_ids = {c["Id"] for c in containers}
-                self.ci_metadata = {k: v for k, v in self.ci_metadata.items() if k in visible_ids}
-                if not self.images or time.monotonic() - self.images_at > 30:
+            except DOCKER_ERRORS as exc:
+                info = {}
+                gaps.append(f"Docker engine info unavailable ({type(root_cause(exc)).__name__})")
+            running = [c for c in containers if c["State"] == "running"][:64]
+            current_stats, failed = {}, []
+            def stats(container):
+                try:
+                    return container["Id"], client.api.stats(container["Id"], stream=False, one_shot=True), None
+                except DOCKER_ERRORS as exc:
+                    return container["Id"], None, exc
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                for identifier, value, exc in pool.map(stats, running):
+                    current_stats[identifier] = value
+                    if exc is not None:
+                        failed.append(exc)
+            if failed:
+                gaps.append(f"Container stats {'timed out' if all(map(timed_out, failed)) else 'unavailable'} for {len(failed)} of {len(running)} running containers")
+            rows = []
+            ci_candidates = [c for c in containers if any(k.startswith("com.gitlab.gitlab-runner") for k in (c.get("Labels") or {})) or any(n.lstrip("/").startswith("runner-") for n in c.get("Names", []))]
+            def metadata_for(container):
+                try:
+                    environment = client.api.inspect_container(container["Id"]).get("Config", {}).get("Env") or []
+                    return container["Id"], ci_environment(environment)
+                except DOCKER_ERRORS:
+                    return container["Id"], None
+            missing = [c for c in ci_candidates if c["Id"] not in self.ci_metadata][:16]
+            unread = 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                for identifier, metadata in pool.map(metadata_for, missing):
+                    if metadata is not None:
+                        self.ci_metadata[identifier] = metadata
+                    else:
+                        unread += 1
+            if unread:
+                gaps.append(f"CI job metadata unavailable for {unread} of {len(missing)} job containers")
+            for c in containers[:200]:
+                s = current_stats.get(c["Id"])
+                cpu = None
+                memory = None
+                limit = None
+                if s:
+                    current = s.get("cpu_stats", {})
+                    previous = self.previous.get(c["Id"], {})
+                    cpu_delta = current.get("cpu_usage", {}).get("total_usage", 0) - previous.get("cpu_usage", {}).get("total_usage", 0)
+                    system_delta = current.get("system_cpu_usage", 0) - previous.get("system_cpu_usage", 0)
+                    if previous and system_delta > 0 and cpu_delta >= 0:
+                        cpu = cpu_delta / system_delta * current.get("online_cpus", 1) * 100
+                    self.previous[c["Id"]] = current
+                    m = s.get("memory_stats", {})
+                    memory = max(0, m.get("usage", 0) - m.get("stats", {}).get("inactive_file", 0))
+                    limit = m.get("limit")
+                labels = c.get("Labels") or {}
+                ci_fields = {"job_id": "job.id", "job_name": "job.name", "project_id": "job.project.id", "project_path": "job.project.path", "runner_id": "runner.id", "role": "type"}
+                metadata = {**self.ci_metadata.get(c["Id"], {}), **{key: labels["com.gitlab.gitlab-runner." + field] for key, field in ci_fields.items() if "com.gitlab.gitlab-runner." + field in labels}}
+                rows.append({"id": c["Id"], "name": (c.get("Names") or [c["Id"][:12]])[0].lstrip("/"), "image": c["Image"],
+                    "image_id": c.get("ImageID"), "state": c["State"], "status": c["Status"], "created": c["Created"], "cpu_percent": cpu,
+                    "memory_bytes": memory, "memory_limit": limit, "managed": labels.get("opsdeck.managed") == "true",
+                    "ci": any(k.startswith("com.gitlab.gitlab-runner") for k in labels) or any(n.lstrip("/").startswith("runner-") for n in c.get("Names", [])), "ci_metadata": metadata,
+                    "ports": [{"private": p.get("PrivatePort"), "public": p.get("PublicPort"), "type": p.get("Type")} for p in c.get("Ports", [])]})
+            self.previous = {k: v for k, v in self.previous.items() if k in current_stats}
+            visible_ids = {c["Id"] for c in containers}
+            self.ci_metadata = {k: v for k, v in self.ci_metadata.items() if k in visible_ids}
+            if self.images_tried is None or time.monotonic() - self.images_tried > 30:
+                self.images_tried = time.monotonic()
+                try:
                     image_data = client.api.images(all=True)
                     self.images = [{"id": image["Id"], "tags": image.get("RepoTags") or [], "size_bytes": image.get("Size"),
                         "created": image.get("Created"), "referencing_containers": sum(c.get("ImageID") == image["Id"] for c in containers)} for image in image_data[:500]]
-                    self.images_at = time.monotonic()
-                storage_error = None
-                if time.monotonic() - self.storage_at > 300 or self.storage is None:
+                    self.images_at, self.images_error = time.monotonic(), None
+                except DOCKER_ERRORS as exc:
+                    self.images_error = exc
+            if self.images_error is not None:
+                gaps.append(self.gap("Docker image list", self.images_error, time.monotonic() - self.images_at if self.images_at else None))
+            # Disk usage walks every layer and volume; it gets its own longer timeout and runs at most every 5 min.
+            if self.storage_tried is None or time.monotonic() - self.storage_tried > 300:
+                self.storage_tried = time.monotonic()
+                try:
+                    slow = docker.from_env(timeout=max(30, self.timeout * 3))
                     try:
-                        usage = client.df()
-                        images = usage.get("Images") or []
-                        volumes = usage.get("Volumes") or []
-                        build = usage.get("BuildCache") or []
-                        self.storage = {"layers_bytes": usage.get("LayersSize"), "images_count": len(images), "volumes_count": len(volumes),
-                            "build_cache_bytes": sum(x.get("Size", 0) for x in build),
-                            "build_cache_reclaimable_bytes": sum(x.get("Size", 0) for x in build if not x.get("InUse")),
-                            "updated_at": time.time(),
-                            "volumes": [{"name": v.get("Name"), "driver": v.get("Driver"), "mountpoint": v.get("Mountpoint"),
-                                "size_bytes": (v.get("UsageData") or {}).get("Size") if (v.get("UsageData") or {}).get("Size", -1) >= 0 else None,
-                                "references": (v.get("UsageData") or {}).get("RefCount")} for v in volumes[:200]]}
-                        self.storage_at = time.monotonic()
-                    except docker.errors.DockerException:
-                        storage_error = "Docker disk-usage query unavailable"
-                return source({"version": info.get("ServerVersion"), "storage_driver": info.get("Driver"), "root": info.get("DockerRootDir"),
-                    "containers": rows, "total_containers": len(containers), "stats_limit": 64, "truncated": len(containers) > 200,
-                    "storage": self.storage, "storage_error": storage_error, "images": self.images,
-                    "images_updated_at": time.time() - max(0, time.monotonic() - self.images_at),
-                    "ci_running": sum(c["ci"] and c["state"] == "running" for c in rows)})
-            finally:
-                client.close()
-        except (docker.errors.DockerException, OSError) as exc:
-            return failure(exc, "Docker daemon unavailable; check the service and socket permissions")
+                        usage = slow.df()
+                    finally:
+                        slow.close()
+                    images = usage.get("Images") or []
+                    volumes = usage.get("Volumes") or []
+                    build = usage.get("BuildCache") or []
+                    self.storage = {"layers_bytes": usage.get("LayersSize"), "images_count": len(images), "volumes_count": len(volumes),
+                        "build_cache_bytes": sum(x.get("Size", 0) for x in build),
+                        "build_cache_reclaimable_bytes": sum(x.get("Size", 0) for x in build if not x.get("InUse")),
+                        "updated_at": time.time(),
+                        "volumes": [{"name": v.get("Name"), "driver": v.get("Driver"), "mountpoint": v.get("Mountpoint"),
+                            "size_bytes": (v.get("UsageData") or {}).get("Size") if (v.get("UsageData") or {}).get("Size", -1) >= 0 else None,
+                            "references": (v.get("UsageData") or {}).get("RefCount")} for v in volumes[:200]]}
+                    self.storage_error = None
+                except DOCKER_ERRORS as exc:
+                    self.storage_error = exc
+            storage_error = None
+            if self.storage_error is not None:
+                storage_error = self.gap("Docker disk usage", self.storage_error, time.time() - self.storage["updated_at"] if self.storage else None)
+                gaps.append(storage_error)
+            return source({"version": info.get("ServerVersion"), "storage_driver": info.get("Driver"), "root": info.get("DockerRootDir"),
+                "containers": rows, "total_containers": len(containers), "stats_limit": 64, "truncated": len(containers) > 200,
+                "storage": self.storage, "storage_error": storage_error, "images": self.images,
+                "images_updated_at": time.time() - max(0, time.monotonic() - self.images_at),
+                "ci_running": sum(c["ci"] and c["state"] == "running" for c in rows)},
+                "degraded" if gaps else "healthy", "; ".join(gaps) or None)
+        except DOCKER_ERRORS as exc:
+            return source(status="unavailable", message=self.problem(exc, "reading container details"))
+        finally:
+            client.close()
+
+
+def runner_endpoint(url):
+    """host:port only; userinfo, path, and query never reach the message."""
+    try:
+        parts = urlsplit(url)
+        host, port = parts.hostname, parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+    except ValueError:
+        host = port = None
+    if not host or not re.fullmatch(r"[A-Za-z0-9._:%-]+", host):
+        return "the configured RUNNER_METRICS_URL"
+    host = f"[{host}]" if ":" in host else host
+    return f"{host}:{port}" if port else host
 
 
 def runner_collect(settings):
@@ -377,6 +479,10 @@ def runner_collect(settings):
         if not metrics:
             return source({"metrics": {}, "facts": facts}, "unavailable", "Endpoint returned no recognized runner metrics; verify RUNNER_METRICS_URL")
         return source({"metrics": metrics, "facts": facts})
+    except httpx.ConnectError:
+        return source({"metrics": {}, "facts": facts}, "not_configured", f"No runner metrics listener at {runner_endpoint(settings.runner_url)}. "
+                      'If GitLab Runner runs on this host, set listen_address = "127.0.0.1:9252" in /etc/gitlab-runner/config.toml and restart it; '
+                      "otherwise set RUNNER_METRICS_URL= in the agent environment.")
     except (httpx.HTTPError, ValueError) as exc:
         return source({"metrics": {}, "facts": facts}, "unavailable", f"Runner metrics endpoint unavailable ({type(exc).__name__}); enable its local metrics listener")
 

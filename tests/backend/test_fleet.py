@@ -253,14 +253,14 @@ def test_schema_migration_adds_defaulted_columns_idempotently_and_stays_rollback
     fleet = Fleet(path)
     Fleet(path)
     node = fleet.node("old", 10)
-    assert (node["notes"], node["maintenance"], node["status"]) == ("", False, "waiting")
+    assert (node["notes"], node["maintenance"], node["status"], node["ignored_sources"], node["source_messages"]) == ("", False, "waiting", [], {})
     with fleet.connect() as db:
         columns = [row[1] for row in db.execute("PRAGMA table_info(fleet_nodes)")]
-        assert columns.count("notes") == 1 and columns.count("maintenance") == 1
+        assert columns.count("notes") == 1 and columns.count("maintenance") == 1 and columns.count("ignored_sources") == 1
         # The previous release inserts and reads with explicit column lists only.
         db.execute("INSERT INTO fleet_nodes(id,name,cluster,token_hash,created_at) VALUES ('new','n','a','y',2)")
         assert db.execute("SELECT id,name,cluster,created_at,revoked,last_seen,collected_at,summary FROM fleet_nodes WHERE id='new'").fetchone()[0] == "new"
-    assert fleet.node("new", 10)["maintenance"] is False
+    assert fleet.node("new", 10)["maintenance"] is False and fleet.node("new", 10)["ignored_sources"] == []
 
 
 def test_alert_rules_thresholds_suppression_and_order():
@@ -482,3 +482,37 @@ def test_metrics_token_is_scrape_only_and_validated(tmp_path):
     for bad in ("short", TOKEN):
         with pytest.raises(ValueError, match="OPSDECK_METRICS_TOKEN"):
             Settings(mode="central", token=TOKEN, db=str(tmp_path / "x.sqlite"), metrics_token=bad).validate()
+
+
+def test_source_messages_become_alert_details_and_ignored_sources_stay_silent(app):
+    from backend.fleet import fleet_alerts, prometheus
+    with TestClient(app) as client:
+        node = enroll(client)
+        sample = envelope()
+        sample["sources"]["docker"].update(status="unavailable", message="Docker API did not answer within 10s while listing containers (ReadTimeout). " + "x" * 400)
+        sample["sources"]["runner"].update(status="degraded")
+        sample["sources"]["services"].update(status="unavailable", message="The container cannot reach the host's systemd bus.")
+        assert client.post("/api/agent/telemetry", headers=agent(node), json=sample).status_code == 200
+        body = client.get("/api/fleet", headers=OPERATOR).json()
+        messages = body["nodes"][0]["source_messages"]
+        assert set(messages) == {"docker", "services"} and len(messages["docker"]) == 300
+        details = {a["key"].split(":")[-1]: a["detail"] for a in body["alerts"]}
+        assert details == {"docker": messages["docker"], "services": "The container cannot reach the host's systemd bus.",
+                           "runner": "The Runner collector reported degraded. Open the host to read the source message."}
+        url = f'/api/fleet/nodes/{node["id"]}/settings'
+        for bad in ({"ignored_sources": ["host"]}, {"ignored_sources": ["disk"]}, {"ignored_sources": "docker"},
+                    {"ignored_sources": ["docker", "gpu", "runner", "services", "docker"]}):
+            assert client.post(url, headers=OPERATOR, json=bad).status_code == 422, bad
+        updated = client.post(url, headers=OPERATOR, json={"ignored_sources": ["services", "docker", "services"]})
+        assert updated.status_code == 200 and updated.json()["ignored_sources"] == ["docker", "services"]
+        events = client.get("/api/events", headers=OPERATOR).json()
+        assert (events[0]["title"], events[0]["detail"]) == ("Host settings changed", "runner-01: ignored sources (docker, services)")
+        assert client.post(url, headers=OPERATOR, json={"ignored_sources": ["docker", "services"]}).status_code == 200
+        assert len(client.get("/api/events", headers=OPERATOR).json()) == len(events)
+        body = client.get("/api/fleet", headers=OPERATOR).json()
+        assert [a["title"] for a in body["alerts"]] == ["Runner source degraded"] and body["summary"]["alerts_warning"] == 1
+        assert body["nodes"][0]["source_status"]["docker"] == "unavailable"
+        assert 'opsdeck_fleet_alerts{severity="warning"} 1' in prometheus(body["nodes"], fleet_alerts(body["nodes"]), "test")
+        cleared = client.post(url, headers=OPERATOR, json={"ignored_sources": []}).json()
+        assert cleared["ignored_sources"] == [] and client.get("/api/events", headers=OPERATOR).json()[0]["detail"] == "runner-01: ignored sources (none)"
+        assert len(client.get("/api/fleet", headers=OPERATOR).json()["alerts"]) == 3

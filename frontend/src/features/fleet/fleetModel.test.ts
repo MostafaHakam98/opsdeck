@@ -168,6 +168,27 @@ describe("client-side alert and summary fallback", () => {
       ]).map((a) => a.kind),
     ).toEqual(["offline"]);
   });
+  it("uses the agent message as detail and skips ignored sources", () => {
+    const alerts = deriveAlerts([
+      node({
+        id: "daos",
+        source_status: {
+          docker: "unavailable",
+          runner: "unavailable",
+          services: "degraded",
+        },
+        source_messages: { docker: "Docker API did not answer within 10s" },
+        ignored_sources: ["runner"],
+      }),
+    ]);
+    expect(alerts.map((a) => [a.title, a.detail])).toEqual([
+      ["Docker source unavailable", "Docker API did not answer within 10s"],
+      [
+        "Services source degraded",
+        "The Services collector reported degraded. Open the host to read the source message.",
+      ],
+    ]);
+  });
   it("summarises online hosts only", () => {
     const summary = deriveSummary(nodes, deriveAlerts(nodes));
     expect(summary.hosts).toBe(8);

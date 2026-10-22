@@ -1211,6 +1211,18 @@ button.fleet-alert:hover {
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
+.fleet-source-grid > li.fleet-source-ignored strong,
+.fleet-source-grid > li.fleet-source-ignored small {
+  color: var(--text-faint);
+  opacity: 0.8;
+}
+.fleet-source-grid .fleet-source-fix {
+  color: var(--text-muted);
+}
+.fleet-source-fix b {
+  color: var(--text);
+  font-weight: 600;
+}
 
 /* Tabs: underline indicator, never a filled box */
 .fleet-tabs {
@@ -1603,6 +1615,40 @@ button.fleet-alert:hover {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   box-shadow: none;
+}
+.fleet-collectors {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-2);
+}
+.fleet-collectors legend {
+  float: left;
+  padding: 0;
+}
+.fleet-collectors > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+.fleet-form .fleet-collectors label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.fleet-form .fleet-collectors input {
+  width: auto;
+  margin: 0;
+}
+.fleet-collectors small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .fleet-form-foot {
   display: flex;

@@ -145,11 +145,13 @@ The fleet overview derives alerts from each host's latest state on every request
 | Host stale | Warning, "Telemetry stale" |
 | CPU or memory at least 90% / 80% | Critical / warning |
 | I/O pressure (`some avg60`) at least 25% / 10% | Critical / warning |
-| A collector reports `degraded` or `unavailable` | Warning, for example "GPU source unavailable" |
+| A monitored collector reports `degraded` or `unavailable` | Warning, for example "GPU source unavailable", with the collector's own message as detail |
 
 Load and collector rules apply only to online hosts, because an offline or stale host's readings are old. Waiting and revoked hosts raise nothing. Alerts are sorted critical first, then by host name. The overview `summary` counts hosts per status, hosts in maintenance, clusters, and alerts, and averages CPU, memory, and GPU over online hosts that report a value.
 
 Put a host into maintenance before planned work. Maintenance silences all of its alerts without hiding the host or its status. Name, cluster, notes (up to 500 characters), and maintenance are changed with `POST /api/fleet/nodes/{id}/settings`; each change is recorded in **Fleet audit** ("Host settings changed", "Maintenance started", "Maintenance ended"). Renaming or moving a host does not change its agent credential.
+
+Uncheck collectors a host does not run under **Host settings > Monitored collectors** (`ignored_sources`: any of `docker`, `gpu`, `runner`, `services`). Ignored collectors are shown as "not monitored" and raise no alerts. See "Agent collector shows unavailable" in the [troubleshooting guide](../guides/troubleshooting.md) for the common Docker timeout, runner listener, and systemd bus causes.
 
 `GET /api/fleet/metrics` exposes Prometheus gauges for scraping with the operator token or, preferably, a separate scrape-only `OPSDECK_METRICS_TOKEN` that cannot read or change anything else: `opsdeck_node_up`, `opsdeck_node_cpu_percent`, `opsdeck_node_memory_percent`, `opsdeck_node_gpu_percent`, `opsdeck_node_ci_running`, `opsdeck_node_age_seconds`, `opsdeck_node_maintenance`, `opsdeck_fleet_alerts{severity}`, and `opsdeck_build_info{version}`. Missing readings are omitted rather than reported as zero. Set `OPSDECK_VERSION` (or ship a `SOURCE_COMMIT` file) so `/healthz` and `opsdeck_build_info` identify the running build. `make docker-build` stamps the image with the current commit.
 
@@ -167,7 +169,7 @@ scrape_configs:
 
 Fleet capacity history covers up to seven days (`hours` 1..168); a single host's history still covers the full retention window.
 
-The database gains `notes` and `maintenance` columns on first start, with defaults, so the previous release can still read and write it after a rollback. Rolling back drops the notes and maintenance behavior, not the data.
+The database gains `notes`, `maintenance`, and `ignored_sources` columns on first start, with defaults, so the previous release can still read and write it after a rollback. Rolling back drops the notes, maintenance, and ignored-collector behavior, not the data.
 
 ## Credentials, backup, and limits
 

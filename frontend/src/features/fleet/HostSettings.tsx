@@ -4,19 +4,31 @@ import { Section } from "./FleetComponents";
 import type { Node } from "./types";
 
 const NOTES_MAX = 500;
+/** Optional collectors; the host collector is the agent itself. */
+const COLLECTORS = [
+  ["docker", "Docker"],
+  ["gpu", "GPU"],
+  ["runner", "Runner"],
+  ["services", "Services"],
+] as const;
 
 type Values = {
   name: string;
   cluster: string;
   notes: string;
   maintenance: boolean;
+  ignored: string[];
 };
+function canonical(ignored: string[]) {
+  return COLLECTORS.map(([key]) => key).filter((key) => ignored.includes(key));
+}
 function values(node: Node): Values {
   return {
     name: node.name,
     cluster: node.cluster,
     notes: node.notes || "",
     maintenance: Boolean(node.maintenance),
+    ignored: canonical(node.ignored_sources || []),
   };
 }
 
@@ -39,17 +51,19 @@ export function HostSettings({
   const [cluster, setCluster] = useState(base.cluster);
   const [notes, setNotes] = useState(base.notes);
   const [maintenance, setMaintenance] = useState(base.maintenance);
+  const [ignored, setIgnored] = useState(base.ignored);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(
     null,
   );
   const changes: Partial<
-    Pick<Node, "name" | "cluster" | "notes" | "maintenance">
+    Pick<Node, "name" | "cluster" | "notes" | "maintenance" | "ignored_sources">
   > = {};
   if (name.trim() !== base.name) changes.name = name.trim();
   if (cluster.trim() !== base.cluster) changes.cluster = cluster.trim();
   if (notes !== base.notes) changes.notes = notes;
   if (maintenance !== base.maintenance) changes.maintenance = maintenance;
+  if (ignored.join() !== base.ignored.join()) changes.ignored_sources = ignored;
   const dirty = Object.keys(changes).length > 0;
   const valid = name.trim().length > 0 && cluster.trim().length > 0;
   async function save() {
@@ -67,6 +81,7 @@ export function HostSettings({
       setCluster(saved.cluster);
       setNotes(saved.notes);
       setMaintenance(saved.maintenance);
+      setIgnored(saved.ignored);
       setResult({ ok: true, text: "Settings saved." });
       onSaved(updated);
     } catch (err) {
@@ -144,6 +159,36 @@ export function HostSettings({
               onChange={(e) => setMaintenance(e.target.checked)}
             />
           </div>
+          <fieldset
+            className="fleet-collectors fleet-form-wide"
+            aria-describedby="fleet-collectors-help"
+          >
+            <legend className="fleet-label">Monitored collectors</legend>
+            <div>
+              {COLLECTORS.map(([key, label]) => (
+                <label key={key}>
+                  <input
+                    type="checkbox"
+                    checked={!ignored.includes(key)}
+                    onChange={(e) =>
+                      setIgnored(
+                        canonical(
+                          e.target.checked
+                            ? ignored.filter((k) => k !== key)
+                            : [...ignored, key],
+                        ),
+                      )
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <small id="fleet-collectors-help">
+              Unchecked collectors are shown as not monitored and never raise
+              alerts. Use this for collectors this host does not run.
+            </small>
+          </fieldset>
         </div>
         <div className="fleet-form-foot">
           {result && (
@@ -166,6 +211,7 @@ export function HostSettings({
                 setCluster(latest.cluster);
                 setNotes(latest.notes);
                 setMaintenance(latest.maintenance);
+                setIgnored(latest.ignored);
                 setResult(null);
               }}
             >
