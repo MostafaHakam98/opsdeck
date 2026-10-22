@@ -229,7 +229,7 @@ def services_collect(settings):
         return source(rows)
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
         stderr = exc.stderr if isinstance(exc, subprocess.CalledProcessError) and isinstance(exc.stderr, str) else ""
-        if settings.host_root and any(marker in stderr for marker in ("Failed to connect to bus", "Permission denied", "No such file")):
+        if settings.host_root and any(marker in stderr for marker in ("Failed to connect to bus", "Permission denied", "No such file", "not been booted with systemd")):
             return source(status="unavailable", message="The container cannot reach the host's systemd bus. Run the host service exporter "
                           "(deploy/export_services.py with compose.services.yaml), or set OPSDECK_SERVICES= in the agent environment to stop monitoring services.")
         return failure(exc, "Systemd service status unavailable on this host")

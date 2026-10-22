@@ -128,3 +128,13 @@ def test_runner_refused_connection_is_not_configured_and_shows_only_host_and_por
     monkeypatch.setattr(httpx, "get", slow)
     result = runner_collect(Settings(runner_facts="/nonexistent"))
     assert result["status"] == "unavailable" and "(ReadTimeout)" in result["message"]
+
+
+def test_services_explain_selinux_denied_bus_seen_on_daos(tmp_path, monkeypatch):
+    (tmp_path / "run" / "dbus").mkdir(parents=True)
+    (tmp_path / "run" / "dbus" / "system_bus_socket").touch()
+    def refuse(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, args[0], stderr="System has not been booted with systemd as init system (PID 1). Can't operate.\n")
+    monkeypatch.setattr("backend.collectors.subprocess.run", refuse)
+    result = services_collect(Settings(services=["docker.service"], host_root=str(tmp_path)))
+    assert result["message"].startswith("The container cannot reach the host's systemd bus.")
