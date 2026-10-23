@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { ArrowRight, Eye, EyeOff, LockKeyhole } from "lucide-react";
 import { api } from "../lib/api";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -55,7 +55,15 @@ export function SignIn({
           {pulse.map((row, r) => (
             <div key={r}>
               {row.map((level, c) => (
-                <i key={c} style={{ background: `var(--heat-${level})` }} />
+                <i
+                  key={c}
+                  style={
+                    {
+                      background: `var(--heat-${level})`,
+                      "--c": c,
+                    } as CSSProperties
+                  }
+                />
               ))}
             </div>
           ))}

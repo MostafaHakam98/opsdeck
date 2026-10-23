@@ -1,217 +1,234 @@
 /*
- * Signal board design tokens. Components use only these names, so both themes
- * stay in sync. Status colors carry one meaning everywhere:
+ * Faceplate design tokens. The product reads like rack equipment: a mineral
+ * bench (page), instrument panels on it, and a graphite rail that stays dark
+ * in both themes so the lit navigation reads like a status LED.
+ * Components use only these names, so both themes stay in sync. Status colors
+ * carry one meaning everywhere:
  *   good = healthy/passed, warn = stale/pending/needs a check,
  *   bad = failed/unavailable/critical, info = neutral guidance, muted = no data.
  * The heat ramp (--heat-0 idle .. --heat-5 saturated, --heat-empty no data)
- * shades the fleet pulse wall.
+ * runs from cool petrol to amber and red, and shades the fleet pulse wall.
+ * Type: one variable family (Archivo) carries everything; its width axis
+ * separates roles. Headings are set wide, readouts narrow, body at 100%.
  */
 :root {
   --font-display:
-    "Barlow Semi Condensed", "IBM Plex Sans", system-ui, -apple-system,
-    "Segoe UI", Roboto, sans-serif;
+    "Archivo Variable", "Archivo", system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
   --font-body:
-    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans",
-    "Liberation Sans", Arial, sans-serif;
+    "Archivo Variable", "Archivo", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Noto Sans", "Liberation Sans", Arial, sans-serif;
   --font-mono:
     "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas,
     "Liberation Mono", monospace;
-  --radius-sm: 6px;
-  --radius: 10px;
+  --stretch-heading: 112%;
+  --stretch-readout: 86%;
+  --radius-sm: 5px;
+  --radius: 7px;
+  /* Fixed-pitch segments shared by every usage bar (track and fill). */
+  --meter-mask: repeating-linear-gradient(
+    90deg,
+    #000 0 5px,
+    transparent 5px 7px
+  );
 
   color-scheme: light;
-  --bg: #eef1f6;
-  --surface: #ffffff;
-  --surface-2: #f6f8fb;
-  --surface-3: #e9edf3;
-  --border: #dbe1ea;
-  --border-strong: #c3cbd8;
-  --text: #18202e;
-  --text-muted: #576378;
-  --text-faint: #646f86;
+  --bg: #e8eae5;
+  --surface: #fbfbf9;
+  --surface-2: #f3f4f0;
+  --surface-3: #e6e8e2;
+  --border: #d6d9d1;
+  --border-strong: #bcc1b6;
+  --text: #161a1d;
+  --text-muted: #50585c;
+  --text-faint: #5f676b;
 
-  --accent: #4f4fd6;
-  --accent-hover: #4141bd;
-  --accent-text: #4343c4;
-  --accent-soft: #ecebfd;
+  --accent: #0b6e7b;
+  --accent-hover: #095c67;
+  --accent-text: #0a6370;
+  --accent-soft: #dcecea;
   --on-accent: #ffffff;
-  --focus: #5b5ce0;
+  --focus: #0b7f8e;
 
-  --nav-bg: #ffffff;
-  --nav-text: #3d475a;
-  --nav-faint: #646f86;
-  --nav-hover: #f0f2f7;
-  --nav-active: #ecebfd;
-  --nav-line: #e3e7ee;
-  --nav-strong: #18202e;
-  --nav-accent: #4f4fd6;
-  --inverse-bg: #1d2639;
-  --inverse-text: #e7ebf3;
+  /* The rail is graphite in both themes. */
+  --nav-bg: #1a1f22;
+  --nav-text: #bcc5c7;
+  --nav-faint: #8d979a;
+  --nav-hover: #242b2f;
+  --nav-active: #283337;
+  --nav-line: #2c3438;
+  --nav-strong: #f3f6f5;
+  --nav-accent: #5fd4dc;
+  --nav-alert: #ff8f7f;
+  --inverse-bg: #1f2629;
+  --inverse-text: #eef2f1;
 
-  --good: #147556;
-  --good-soft: #e2f3ec;
-  --good-line: #b3dccb;
-  --warn: #8a5600;
-  --warn-soft: #fcf0d9;
-  --warn-line: #ebcf98;
-  --bad: #c0362c;
-  --bad-soft: #fdebe8;
-  --bad-line: #f1c3bd;
-  --info: #2860bd;
-  --info-soft: #e8effb;
-  --info-line: #c4d5f1;
-  --neutral: #5b6880;
-  --neutral-soft: #edf0f5;
+  --good: #1f7a40;
+  --good-soft: #e1efe2;
+  --good-line: #b4d6bb;
+  --warn: #8f5500;
+  --warn-soft: #f7ebd2;
+  --warn-line: #e4c68c;
+  --bad: #bb3326;
+  --bad-soft: #f8e4e0;
+  --bad-line: #ebbcb4;
+  --info: #35589e;
+  --info-soft: #e4eaf4;
+  --info-line: #c2cfe6;
+  --neutral: #5d676b;
+  --neutral-soft: #eaece7;
 
-  --series-1: #5354d8;
-  --series-2: #a4479f;
-  --series-3: #0e8a7d;
-  --series-4: #b8781a;
-  --chart-grid: #e4e8f0;
-  --chart-tick: #646f86;
+  --series-1: #0b6e7b;
+  --series-2: #a3478f;
+  --series-3: #4b5fc8;
+  --series-4: #a8742a;
+  --chart-grid: #e0e3dc;
+  --chart-tick: #5f676b;
 
-  --heat-empty: #f1f3f7;
-  --heat-0: #e2e5f4;
-  --heat-1: #c4c5f3;
-  --heat-2: #9192ea;
-  --heat-3: #5a5bd9;
-  --heat-4: #e9a23b;
-  --heat-5: #e0533f;
+  --heat-empty: #eef0ec;
+  --heat-0: #d9e6e3;
+  --heat-1: #a7cfcd;
+  --heat-2: #5eadb2;
+  --heat-3: #167f8c;
+  --heat-4: #e09a33;
+  --heat-5: #cf4a35;
 
-  --shadow: 0 1px 0 rgb(24 32 46 / 0.04);
-  --shadow-lg: 0 16px 48px rgb(18 24 38 / 0.2);
-  --backdrop: rgb(18 24 38 / 0.5);
+  --shadow: none;
+  --shadow-lg: 0 18px 50px rgb(22 26 29 / 0.22);
+  --backdrop: rgb(16 20 22 / 0.55);
 }
 /* Dark tokens: applied for the "dark" choice, or for "system" on a dark OS.
  * Keep this block identical to the prefers-color-scheme block below. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #121826;
-  --surface: #182032;
-  --surface-2: #1d2639;
-  --surface-3: #242e45;
-  --border: #28324a;
-  --border-strong: #3a4662;
-  --text: #e7ebf3;
-  --text-muted: #9aa6bd;
-  --text-faint: #8591a9;
+  --bg: #15191c;
+  --surface: #1c2125;
+  --surface-2: #21272b;
+  --surface-3: #2a3136;
+  --border: #2c3439;
+  --border-strong: #3e484e;
+  --text: #e6ebea;
+  --text-muted: #a2acaf;
+  --text-faint: #8c979b;
 
-  --accent: #8b8cff;
-  --accent-hover: #a2a3ff;
-  --accent-text: #a5a6ff;
-  --accent-soft: rgb(139 140 255 / 0.14);
-  --on-accent: #11132b;
-  --focus: #a5a6ff;
+  --accent: #4fc6cf;
+  --accent-hover: #74d5dc;
+  --accent-text: #6dd3db;
+  --accent-soft: rgb(79 198 207 / 0.14);
+  --on-accent: #082427;
+  --focus: #6dd3db;
 
-  --nav-bg: #0f1420;
-  --nav-text: #aeb8cc;
-  --nav-faint: #8792a9;
-  --nav-hover: #19202f;
-  --nav-active: rgb(139 140 255 / 0.16);
-  --nav-line: #1f2738;
-  --nav-strong: #f2f4f9;
-  --nav-accent: #a5a6ff;
-  --inverse-bg: #2a3450;
-  --inverse-text: #f2f4f9;
+  --nav-bg: #101417;
+  --nav-text: #aab4b7;
+  --nav-faint: #828d91;
+  --nav-hover: #1a2023;
+  --nav-active: rgb(79 198 207 / 0.13);
+  --nav-line: #1f262a;
+  --nav-strong: #f3f6f5;
+  --nav-accent: #6dd3db;
+  --nav-alert: #ff8f7f;
+  --inverse-bg: #2a3237;
+  --inverse-text: #f3f6f5;
 
-  --good: #4cc9a0;
-  --good-soft: rgb(76 201 160 / 0.13);
-  --good-line: rgb(76 201 160 / 0.35);
-  --warn: #f2b84f;
-  --warn-soft: rgb(242 184 79 / 0.13);
-  --warn-line: rgb(242 184 79 / 0.35);
-  --bad: #ff7d6e;
-  --bad-soft: rgb(255 125 110 / 0.13);
-  --bad-line: rgb(255 125 110 / 0.38);
-  --info: #7cabff;
-  --info-soft: rgb(124 171 255 / 0.13);
-  --info-line: rgb(124 171 255 / 0.32);
-  --neutral: #a3aec2;
-  --neutral-soft: rgb(163 174 194 / 0.12);
+  --good: #5cc98a;
+  --good-soft: rgb(92 201 138 / 0.13);
+  --good-line: rgb(92 201 138 / 0.35);
+  --warn: #f0b552;
+  --warn-soft: rgb(240 181 82 / 0.13);
+  --warn-line: rgb(240 181 82 / 0.35);
+  --bad: #ff7f6d;
+  --bad-soft: rgb(255 127 109 / 0.13);
+  --bad-line: rgb(255 127 109 / 0.38);
+  --info: #8fb0f0;
+  --info-soft: rgb(143 176 240 / 0.13);
+  --info-line: rgb(143 176 240 / 0.32);
+  --neutral: #a2acaf;
+  --neutral-soft: rgb(162 172 175 / 0.12);
 
-  --series-1: #8b8cff;
-  --series-2: #e08ad6;
-  --series-3: #3fc8b4;
-  --series-4: #e6ad52;
-  --chart-grid: #252f45;
-  --chart-tick: #8591a9;
+  --series-1: #4fc6cf;
+  --series-2: #e48fd0;
+  --series-3: #8f9dff;
+  --series-4: #e3b25c;
+  --chart-grid: #283035;
+  --chart-tick: #8c979b;
 
-  --heat-empty: #1b2234;
-  --heat-0: #222c47;
-  --heat-1: #343f78;
-  --heat-2: #5558c4;
-  --heat-3: #8b8cff;
-  --heat-4: #f2b84f;
-  --heat-5: #ff6f5e;
+  --heat-empty: #1b2023;
+  --heat-0: #1f3235;
+  --heat-1: #1f5257;
+  --heat-2: #26808a;
+  --heat-3: #4fc6cf;
+  --heat-4: #f0b552;
+  --heat-5: #ff6c58;
 
   --shadow: none;
-  --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.5);
-  --backdrop: rgb(6 9 16 / 0.66);
+  --shadow-lg: 0 18px 50px rgb(0 0 0 / 0.55);
+  --backdrop: rgb(5 8 10 / 0.68);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #121826;
-    --surface: #182032;
-    --surface-2: #1d2639;
-    --surface-3: #242e45;
-    --border: #28324a;
-    --border-strong: #3a4662;
-    --text: #e7ebf3;
-    --text-muted: #9aa6bd;
-    --text-faint: #8591a9;
+    --bg: #15191c;
+    --surface: #1c2125;
+    --surface-2: #21272b;
+    --surface-3: #2a3136;
+    --border: #2c3439;
+    --border-strong: #3e484e;
+    --text: #e6ebea;
+    --text-muted: #a2acaf;
+    --text-faint: #8c979b;
 
-    --accent: #8b8cff;
-    --accent-hover: #a2a3ff;
-    --accent-text: #a5a6ff;
-    --accent-soft: rgb(139 140 255 / 0.14);
-    --on-accent: #11132b;
-    --focus: #a5a6ff;
+    --accent: #4fc6cf;
+    --accent-hover: #74d5dc;
+    --accent-text: #6dd3db;
+    --accent-soft: rgb(79 198 207 / 0.14);
+    --on-accent: #082427;
+    --focus: #6dd3db;
 
-    --nav-bg: #0f1420;
-    --nav-text: #aeb8cc;
-    --nav-faint: #8792a9;
-    --nav-hover: #19202f;
-    --nav-active: rgb(139 140 255 / 0.16);
-    --nav-line: #1f2738;
-    --nav-strong: #f2f4f9;
-    --nav-accent: #a5a6ff;
-    --inverse-bg: #2a3450;
-    --inverse-text: #f2f4f9;
+    --nav-bg: #101417;
+    --nav-text: #aab4b7;
+    --nav-faint: #828d91;
+    --nav-hover: #1a2023;
+    --nav-active: rgb(79 198 207 / 0.13);
+    --nav-line: #1f262a;
+    --nav-strong: #f3f6f5;
+    --nav-accent: #6dd3db;
+    --nav-alert: #ff8f7f;
+    --inverse-bg: #2a3237;
+    --inverse-text: #f3f6f5;
 
-    --good: #4cc9a0;
-    --good-soft: rgb(76 201 160 / 0.13);
-    --good-line: rgb(76 201 160 / 0.35);
-    --warn: #f2b84f;
-    --warn-soft: rgb(242 184 79 / 0.13);
-    --warn-line: rgb(242 184 79 / 0.35);
-    --bad: #ff7d6e;
-    --bad-soft: rgb(255 125 110 / 0.13);
-    --bad-line: rgb(255 125 110 / 0.38);
-    --info: #7cabff;
-    --info-soft: rgb(124 171 255 / 0.13);
-    --info-line: rgb(124 171 255 / 0.32);
-    --neutral: #a3aec2;
-    --neutral-soft: rgb(163 174 194 / 0.12);
+    --good: #5cc98a;
+    --good-soft: rgb(92 201 138 / 0.13);
+    --good-line: rgb(92 201 138 / 0.35);
+    --warn: #f0b552;
+    --warn-soft: rgb(240 181 82 / 0.13);
+    --warn-line: rgb(240 181 82 / 0.35);
+    --bad: #ff7f6d;
+    --bad-soft: rgb(255 127 109 / 0.13);
+    --bad-line: rgb(255 127 109 / 0.38);
+    --info: #8fb0f0;
+    --info-soft: rgb(143 176 240 / 0.13);
+    --info-line: rgb(143 176 240 / 0.32);
+    --neutral: #a2acaf;
+    --neutral-soft: rgb(162 172 175 / 0.12);
 
-    --series-1: #8b8cff;
-    --series-2: #e08ad6;
-    --series-3: #3fc8b4;
-    --series-4: #e6ad52;
-    --chart-grid: #252f45;
-    --chart-tick: #8591a9;
+    --series-1: #4fc6cf;
+    --series-2: #e48fd0;
+    --series-3: #8f9dff;
+    --series-4: #e3b25c;
+    --chart-grid: #283035;
+    --chart-tick: #8c979b;
 
-    --heat-empty: #1b2234;
-    --heat-0: #222c47;
-    --heat-1: #343f78;
-    --heat-2: #5558c4;
-    --heat-3: #8b8cff;
-    --heat-4: #f2b84f;
-    --heat-5: #ff6f5e;
+    --heat-empty: #1b2023;
+    --heat-0: #1f3235;
+    --heat-1: #1f5257;
+    --heat-2: #26808a;
+    --heat-3: #4fc6cf;
+    --heat-4: #f0b552;
+    --heat-5: #ff6c58;
 
     --shadow: none;
-    --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.5);
-    --backdrop: rgb(6 9 16 / 0.66);
+    --shadow-lg: 0 18px 50px rgb(0 0 0 / 0.55);
+    --backdrop: rgb(5 8 10 / 0.68);
   }
 }
 
@@ -311,17 +328,18 @@ p {
 h1,
 h2 {
   font-family: var(--font-display);
+  font-stretch: var(--stretch-heading);
   font-variant-numeric: tabular-nums;
-  line-height: 1.15;
-  letter-spacing: 0;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
 }
 h1 {
-  font-size: 34px;
-  font-weight: 600;
+  font-size: 32px;
+  font-weight: 700;
 }
 h2 {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 650;
 }
 h3 {
   font-size: 14px;
@@ -459,6 +477,7 @@ progress {
 }
 .numeric {
   font-family: var(--font-display);
+  font-stretch: var(--stretch-readout);
   font-variant-numeric: tabular-nums;
 }
 /* Loading placeholder; static under reduced motion. */
@@ -554,16 +573,18 @@ progress {
   width: 30px;
   height: 30px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--nav-active);
+  box-shadow: inset 0 0 0 1px var(--nav-line);
   color: var(--nav-accent);
 }
 .brand-word {
   font-family: var(--font-display);
-  font-size: 23px;
-  font-weight: 600;
+  font-stretch: 118%;
+  font-size: 20px;
+  font-weight: 750;
   line-height: 1;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.01em;
 }
 .workspace-label {
   flex-shrink: 0;
@@ -637,15 +658,17 @@ progress {
 .sidebar nav button.active svg {
   color: var(--nav-accent);
 }
+/* The active item is lit like a panel LED: a short bar with a soft glow. */
 .sidebar nav button.active::before {
   content: "";
   position: absolute;
   left: -12px;
-  top: 7px;
-  bottom: 7px;
+  top: 8px;
+  bottom: 8px;
   width: 3px;
-  border-radius: 0 3px 3px 0;
+  border-radius: 0 2px 2px 0;
   background: var(--nav-accent);
+  box-shadow: 0 0 10px var(--nav-accent);
 }
 .sidebar nav button:focus-visible {
   outline-offset: -2px;
@@ -664,8 +687,24 @@ progress {
   font-variant-numeric: tabular-nums;
 }
 .nav-count-alert {
-  background: var(--bad-soft);
-  box-shadow: inset 0 0 0 1px var(--bad-line);
+  background: color-mix(in srgb, var(--nav-alert) 16%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--nav-alert) 40%, transparent);
+  color: var(--nav-alert);
+}
+/* Status lights on the graphite rail glow instead of sitting on a tint. */
+.sidebar .status-dot.good,
+.sidebar .status-dot.warn,
+.sidebar .status-dot.bad {
+  box-shadow: 0 0 8px currentColor;
+}
+.sidebar .status-dot.good {
+  color: var(--good);
+}
+.sidebar .status-dot.warn {
+  color: var(--warn);
+}
+.sidebar .status-dot.bad {
   color: var(--bad);
 }
 .sidebar-bottom {
@@ -736,7 +775,9 @@ progress {
  * tools right, one 36px row that never wraps on desktop widths. */
 .topbar {
   height: 56px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  backdrop-filter: blur(12px) saturate(1.2);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -816,8 +857,8 @@ progress {
 .page-heading p {
   font-size: 14px;
   color: var(--text-muted);
-  margin-top: 6px;
-  max-width: 720px;
+  margin-top: 8px;
+  max-width: 72ch;
 }
 
 /* Text tinted by status, for headline values. */
@@ -913,13 +954,19 @@ progress {
  * icon), a display-font number with a body-font unit, an optional thin
  * threshold bar, then one muted secondary line. Tiles sit in a grid with a
  * gap; there are no divider rules between them. */
+/* Readout strips are one instrument, split by hairlines: the grid gap shows
+ * the frame color through, so wrapped rows keep their dividers. */
 .resource-strip,
 .diagnostic-metrics,
 .summary-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 1px;
   margin-bottom: 20px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 .diagnostic-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -929,11 +976,8 @@ progress {
 .diagnostic-metrics > div,
 .summary-row > div {
   min-width: 0;
-  padding: 16px 18px;
+  padding: 16px 20px 18px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
 }
 .stat-label,
 .diagnostic-metrics > div > span,
@@ -963,7 +1007,8 @@ progress {
 .support-facts dd {
   display: block;
   font-family: var(--font-display);
-  font-weight: 600;
+  font-stretch: var(--stretch-readout);
+  font-weight: 620;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
   letter-spacing: 0;
@@ -974,8 +1019,8 @@ progress {
 }
 .resource-strip strong,
 .diagnostic-metrics strong {
-  font-size: 34px;
-  margin: 8px 0 12px;
+  font-size: 40px;
+  margin: 6px 0 12px;
 }
 .resource-strip small,
 .diagnostic-metrics small {
@@ -1045,11 +1090,14 @@ progress {
   font-size: 26px;
 }
 
-/* Thin threshold bar: series color until amber or red takes over. */
+/* Segmented threshold bar, like an LED ladder: series color until amber or
+ * red takes over. Track and fill share --meter-mask, so segments line up at
+ * every width. */
 .meter {
-  height: 4px;
+  height: 6px;
   background: var(--surface-3);
-  border-radius: 2px;
+  -webkit-mask-image: var(--meter-mask);
+  mask-image: var(--meter-mask);
   overflow: hidden;
   min-width: 48px;
 }
@@ -1057,7 +1105,6 @@ progress {
   display: block;
   height: 100%;
   background: var(--series-1);
-  border-radius: 2px;
 }
 .meter.purple span {
   background: var(--series-2);
@@ -1250,22 +1297,26 @@ progress {
 .two-column > .panel {
   margin: 0;
 }
+/* Panel headings read like an engraved label strip on the faceplate. */
 .panel-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px 12px;
-  min-height: 52px;
-  padding: 10px 20px;
+  min-height: 48px;
+  padding: 8px 20px;
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 .panel-heading h2,
 .panel-heading h3 {
   min-width: 0;
   font-family: var(--font-body);
+  font-stretch: 106%;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: 0;
   line-height: 1.4;
   color: var(--text);
 }
@@ -1441,7 +1492,7 @@ details.collapsible > summary:hover {
   align-items: center;
   height: 22px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: 4px;
   font-size: 12px;
   line-height: 1;
   font-weight: 500;
@@ -1454,7 +1505,7 @@ details.collapsible > summary:hover {
   width: 6px;
   height: 6px;
   background: currentColor;
-  border-radius: 50%;
+  border-radius: 1.5px;
 }
 .badge.good {
   background: var(--good-soft);
@@ -2353,8 +2404,21 @@ td > button:not([class]):hover:not(:disabled) {
 body:has(.login.sign-in) {
   background: var(--bg);
 }
+/* The brand side is a graphite faceplate in both themes, carrying a dark
+ * slice of the pulse wall; the form sits on the bench beside it. */
 .login-brand {
   min-width: 0;
+  padding: 40px 40px 36px;
+  border-radius: calc(var(--radius) + 3px);
+  background: var(--nav-bg);
+  color: var(--nav-text);
+  box-shadow: inset 0 0 0 1px var(--nav-line);
+  --heat-0: #1f3235;
+  --heat-1: #1f5257;
+  --heat-2: #26808a;
+  --heat-3: #4fc6cf;
+  --heat-4: #f0b552;
+  --heat-5: #ff6c58;
 }
 .login-wordmark {
   display: flex;
@@ -2365,31 +2429,32 @@ body:has(.login.sign-in) {
   width: 44px;
   height: 44px;
   border-radius: var(--radius);
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--nav-active);
+  color: var(--nav-accent);
 }
 .login-wordmark > span:last-child {
   font-family: var(--font-display);
-  font-size: 44px;
-  font-weight: 600;
-  line-height: 1.15;
-  color: var(--text);
+  font-stretch: 118%;
+  font-size: 40px;
+  font-weight: 750;
+  line-height: 1.1;
+  letter-spacing: 0.005em;
+  color: var(--nav-strong);
 }
 .login-purpose {
-  margin: 18px 0 32px;
-  max-width: 36ch;
-  font-size: 20px;
+  margin: 20px 0 32px;
+  max-width: 30ch;
+  font-size: 21px;
   line-height: 1.4;
-  color: var(--text-muted);
+  color: var(--nav-text);
 }
 .login-pulse {
   display: grid;
   gap: 3px;
-  max-width: 440px;
   padding: 12px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: rgb(0 0 0 / 0.22);
+  box-shadow: inset 0 0 0 1px var(--nav-line);
 }
 .login-pulse > div {
   display: grid;
@@ -2400,22 +2465,26 @@ body:has(.login.sign-in) {
   display: block;
   height: 14px;
   border-radius: 2px;
+  animation: login-sweep 0.5s ease-out both;
+  animation-delay: calc(var(--c, 0) * 28ms);
+}
+/* The one load moment: the wall fills left to right, like a first scan. */
+@keyframes login-sweep {
+  from {
+    opacity: 0;
+  }
 }
 .login-mode {
-  margin-top: 14px;
+  margin-top: 16px;
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--nav-faint);
 }
 .login-card {
   min-width: 0;
-  padding: 32px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  padding: 8px 0;
 }
 .login-card h1 {
-  font-size: 34px;
+  font-size: 32px;
 }
 .login-card > p {
   margin: 8px 0 26px;
@@ -2719,16 +2788,16 @@ body:has(.login.sign-in) {
   font-variant-numeric: tabular-nums;
 }
 .risk-track {
-  height: 4px;
+  height: 6px;
   background: var(--surface-3);
-  border-radius: 2px;
+  -webkit-mask-image: var(--meter-mask);
+  mask-image: var(--meter-mask);
   overflow: hidden;
   margin: 8px 0 6px;
 }
 .risk-track span {
   display: block;
   height: 100%;
-  border-radius: inherit;
 }
 .timing-details {
   padding: 6px 20px 10px;
@@ -3094,6 +3163,9 @@ body:has(.login.sign-in) {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .login-pulse i {
+    animation: none;
+  }
   *,
   *::before,
   *::after {
