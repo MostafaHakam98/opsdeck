@@ -42,6 +42,12 @@ export function Onboarding({ onEnroll }: { onEnroll: () => void }) {
             Check it with <code>make agent-status</code>. Full steps are in{" "}
             <code>docs/operations/fleet.md</code>.
           </span>
+          <span>
+            Full host pages also need a local OpsDeck API and the agent’s{" "}
+            <code>OPSDECK_WORKSPACE_URL</code> and{" "}
+            <code>OPSDECK_WORKSPACE_TOKEN</code>. An online telemetry agent
+            alone does not connect those pages.
+          </span>
         </li>
       </ol>
     </section>

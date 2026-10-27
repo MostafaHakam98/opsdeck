@@ -392,3 +392,44 @@ test("command center shows summary, pulse, alerts, maintenance, and the palette"
   );
   expect(errors).toEqual([]);
 });
+
+test("administrator signs in with a password and signs out", async ({
+  page,
+}) => {
+  await page.route("**/api/auth/config", (route) =>
+    route.fulfill({ json: { mode: "password" } }),
+  );
+  await page.route("**/api/auth/login", async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.username).toBe("admin");
+    await route.fulfill(
+      body.password === "correct-password-for-browser-test"
+        ? { json: { token: operator } }
+        : {
+            status: 401,
+            json: { detail: "Username or password was not accepted" },
+          },
+    );
+  });
+  await page.goto("/");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page.getByLabel("Password", { exact: true }).fill("wrong-password");
+  await page.getByRole("button", { name: "Connect to OpsDeck" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Username or password was not accepted",
+  );
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("correct-password-for-browser-test");
+  await page.getByRole("button", { name: "Connect to OpsDeck" }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Switch host" }),
+  ).toBeVisible();
+  const logout = page.waitForRequest("**/api/auth/logout");
+  await page
+    .getByRole("button", { name: "Sign out", exact: true })
+    .first()
+    .click();
+  await logout;
+  await expect(page.getByLabel("Username", { exact: true })).toBeVisible();
+});

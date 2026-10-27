@@ -234,6 +234,7 @@ export function FleetApp({
     if (id) selectNode(id);
   }
   function signOut() {
+    void api("auth/logout", token, {}).catch(() => {});
     sessionStorage.removeItem("opsdeck.token");
     setToken("");
     setCredential(null);

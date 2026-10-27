@@ -76,7 +76,7 @@ export async function api<T>(
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(
-      response.status === 401
+      response.status === 401 && path !== "auth/login"
         ? "Access token is invalid or expired. Sign in again."
         : payload.detail || `Request failed (${response.status})`,
     );

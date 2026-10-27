@@ -2,7 +2,7 @@
 
 ## Sign in and freshness
 
-Use the node's configured access token. The browser stores it for the current tab session; signing out clears it. A page refresh does not rotate the token.
+On a central server with an administrator account configured, sign in with its username and password. The browser remembers a session for this tab for up to 12 hours; signing out revokes it. Standalone nodes and central servers without an account use their configured access token. See [administrator setup](../operations/fleet.md#administrator-username-and-password).
 
 The dashboard refreshes every 10 seconds. Individual collectors have their own schedules. **Unavailable** means a collector cannot retrieve its data; **not configured** means setup or hardware is missing; **stale** means the previous response has exceeded its freshness threshold. A failed browser refresh leaves the previous snapshot visible and shows a connection error.
 

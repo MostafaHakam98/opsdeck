@@ -3,6 +3,7 @@ services:
   opsdeck:
     environment:
       OPSDECK_MODE: central
+      OPSDECK_ADMIN_FILE: /data/admin.json
       OPSDECK_ACTIONS: 'false'
       OPSDECK_OPERATIONS: 'false'
   proxy:

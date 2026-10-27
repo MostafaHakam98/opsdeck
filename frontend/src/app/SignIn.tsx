@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { ArrowRight, Eye, EyeOff, LockKeyhole } from "lucide-react";
 import { api } from "../lib/api";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -38,6 +38,25 @@ export function SignIn({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
+  const [username, setUsername] = useState("");
+  const [mode, setMode] = useState<"token" | "password" | null>(
+    central ? null : "token",
+  );
+  useEffect(() => {
+    if (!central) return;
+    let active = true;
+    api<{ mode: "token" | "password" }>("auth/config", "")
+      .then((result) => {
+        if (active) setMode(result.mode);
+      })
+      .catch((err) => {
+        if (active) setError(signInError(err));
+      });
+    return () => {
+      active = false;
+    };
+  }, [central]);
+  const passwordLogin = mode === "password";
   return (
     <main className="login sign-in">
       <div className="login-theme">
@@ -81,8 +100,16 @@ export function SignIn({
           setBusy(true);
           setError("");
           try {
-            await api("snapshot", value);
-            onSignIn(value);
+            if (passwordLogin) {
+              const result = await api<{ token: string }>("auth/login", "", {
+                username,
+                password: value,
+              });
+              onSignIn(result.token);
+            } else {
+              await api("snapshot", value);
+              onSignIn(value);
+            }
           } catch (err) {
             setError(signInError(err));
           } finally {
@@ -91,28 +118,62 @@ export function SignIn({
         }}
       >
         <h1>Open your workspace</h1>
-        <p>Use the access token configured on your OpsDeck server.</p>
-        <label htmlFor="token">Access token</label>
+        <p>
+          {mode === null
+            ? "Connecting to your OpsDeck server…"
+            : passwordLogin
+              ? "Sign in with your administrator account."
+              : "Use the access token configured on your OpsDeck server."}
+        </p>
+        {passwordLogin && (
+          <>
+            <label htmlFor="username">Username</label>
+            <input
+              id="username"
+              autoComplete="username"
+              autoCapitalize="off"
+              spellCheck={false}
+              required
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+            />
+          </>
+        )}
+        <label htmlFor="token">
+          {passwordLogin ? "Password" : "Access token"}
+        </label>
         <div className="token-field">
           <input
             id="token"
             type={visible ? "text" : "password"}
-            autoComplete="off"
+            autoComplete={passwordLogin ? "current-password" : "off"}
             spellCheck={false}
             autoCapitalize="off"
             required
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="Paste your server access token"
+            placeholder={
+              passwordLogin
+                ? "Enter your password"
+                : "Paste your server access token"
+            }
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? "token-error" : "token-note"}
           />
           <button
             type="button"
             className="token-reveal"
-            aria-label={visible ? "Hide access token" : "Show access token"}
+            aria-label={
+              visible
+                ? `Hide ${passwordLogin ? "password" : "access token"}`
+                : `Show ${passwordLogin ? "password" : "access token"}`
+            }
             aria-pressed={visible}
-            title={visible ? "Hide access token" : "Show access token"}
+            title={
+              visible
+                ? `Hide ${passwordLogin ? "password" : "access token"}`
+                : `Show ${passwordLogin ? "password" : "access token"}`
+            }
             onClick={() => setVisible((v) => !v)}
           >
             {visible ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -123,7 +184,7 @@ export function SignIn({
             {error}
           </p>
         )}
-        <button className="primary" disabled={busy}>
+        <button className="primary" disabled={busy || mode === null}>
           {busy ? "Connecting…" : "Connect to OpsDeck"}
           <ArrowRight size={16} />
         </button>

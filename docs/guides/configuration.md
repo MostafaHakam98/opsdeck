@@ -9,6 +9,7 @@ Native mode loads `.env` without evaluating shell code. Whitespace around `=` an
 | Setting | Default | Use |
 |---|---|---|
 | `OPSDECK_TOKEN` | Required | Random secret of at least 32 characters; one operator role |
+| `OPSDECK_ADMIN_FILE` | `./data/admin.json` native; `/data/admin.json` in central Compose | Optional single administrator username/password account, created with `python -m deploy.admin`; restart after creating or resetting it |
 | `OPSDECK_METRICS_TOKEN` | Empty | Central mode, optional: a separate secret of at least 32 characters accepted only by `GET /api/fleet/metrics`, so Prometheus never holds the operator token |
 | `OPSDECK_BIND` | `127.0.0.1` native | Listen address; host Compose honors it |
 | `OPSDECK_PORT` | `8080` | Native/host port; portable Compose publishes this external port |
@@ -23,7 +24,7 @@ Native mode loads `.env` without evaluating shell code. Whitespace around `=` an
 | `OPSDECK_SERVICES_FILE` | Empty | Optional sanitized native service snapshot, instead of direct DBus reads; see deployment guide |
 | `OPSDECK_DOCKER_TIMEOUT` | `10`, range `2..60` | Seconds to wait for each Docker API call; disk usage uses `max(30, 3 x value)`. Raise it when `time docker ps` is slow on the host |
 
-The application keeps no user-account database. The shared operator token protects measurements and actions. Source code can be cloned anonymously from the public repository.
+Central mode can use one administrator username/password account, with salted scrypt password hashing and 12-hour revocable browser sessions. Without an administrator file, sign-in uses the shared operator token. The operator token remains a private API/recovery credential in either mode. Individual accounts and roles are not implemented. See [administrator setup](../operations/fleet.md#administrator-username-and-password). Source code can be cloned anonymously from the public repository.
 
 ## GitLab
 
