@@ -45,6 +45,24 @@ make central-https-up
 
 Open `https://opsdeck.example.com` and sign in with `OPSDECK_TOKEN` from the server's `.env`. The API's diagnostic port 8080 remains bound to loopback by default. Keep `OPSDECK_PUBLISH_IP=127.0.0.1`. Avoid combining the central override with host, GPU, control, or image-build overrides.
 
+### Administrator username and password
+
+Configure one administrator account inside the running central container:
+
+```bash
+docker compose --project-directory . -p opsdeck-fleet \
+  -f deploy/docker/compose.yaml -f deploy/docker/compose.central.yaml \
+  exec opsdeck python -m deploy.admin --username admin
+docker compose --project-directory . -p opsdeck-fleet \
+  -f deploy/docker/compose.yaml -f deploy/docker/compose.central.yaml restart opsdeck
+```
+
+The command prompts twice without displaying the password. It stores a salted scrypt hash in `/data/admin.json`, in the persistent application volume. Keep any existing Traefik override in deployment commands. Native installations use `.venv/bin/python -m deploy.admin --username admin`; `OPSDECK_ADMIN_FILE` selects another private account-file location.
+
+After restart, the central sign-in page asks for **Username** and **Password**. Successful login issues a random browser session valid for 12 hours, remembered in that tab. Session hashes are retained in SQLite across service restarts. Sign out revokes that session. Reset the password with the same command and restart to invalidate all previous sessions. Back up the private account file alongside the database.
+
+This is one administrator account with full operator access, without individual accounts or roles. The original `OPSDECK_TOKEN` remains a private API/recovery credential; it is never returned by password login. Agent tokens and host workspace tokens remain separate machine credentials. A deployment without an administrator file continues to use token login.
+
 The central container has only its persistent application volume. It never starts local collectors or host controls. Caddy retains certificates in a separate volume and renews them automatically. See [Caddy's HTTPS requirements](https://caddyserver.com/docs/automatic-https) for private DNS and corporate TLS deployments. An existing HTTPS reverse proxy can front `make central-up` instead.
 
 If the instance already runs Traefik, set `OPSDECK_DOMAIN` and `OPSDECK_PROXY_NETWORK` to its hostname and existing Docker network, then add `deploy/docker/compose.traefik.yaml` after the base and central overrides. Set `OPSDECK_PORT` to a free loopback port. `OPSDECK_IMAGE` optionally selects a release image, and `OPSDECK_TRAEFIK_ENTRYPOINT` / `OPSDECK_TRAEFIK_RESOLVER` default to `websecure` / `letsencrypt`. This adds only the new application's route; do not start the Caddy HTTPS profile or restart the existing proxy.
@@ -97,6 +115,29 @@ make docker-agent-up
 ```
 
 This combines the existing host mounts and PID/network visibility with the agent command. It opens no application listener, disables the API health check, and stores its queue in the persistent `opsdeck_data` volume. Stop it with `make docker-down`, retaining the volume. Do not run a standalone container and agent container under the same Compose project at the same time. To add NVIDIA container access, combine the base, host, agent, and GPU overrides, in that order, with the host's NVIDIA Container Toolkit configured.
+
+### Connect the full host workspace too
+
+An agent-only installation reports fleet telemetry but does **not** serve Overview, Docker, surveys, or the other host workspace APIs. If those routes return **503 Host workspace is disconnected**, check both the local API and the outbound relay, even when the host is **online**.
+
+For a new Docker host, start the local API under a separate Compose project before connecting the agent. Create a private `.env.workspace` from `.env.example` with a fresh `OPSDECK_TOKEN`, `OPSDECK_BIND=127.0.0.1`, and a free `OPSDECK_PORT` (8080 below). Keep any host-specific runner facts, service-export, GPU, or build settings:
+
+```bash
+chmod 600 .env.workspace
+export OPSDECK_DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
+OPSDECK_ENV_PATH=.env.workspace docker compose --project-directory . \
+  -p opsdeck-workspace -f deploy/docker/compose.yaml \
+  -f deploy/docker/compose.host.yaml up -d --build --wait
+```
+
+Use `.env.workspace` as Compose's `--env-file` too if its bind/port differs from the defaults; Compose interpolation is separate from the service's `env_file`. Add both values below to `.env.agent`, using the **local API token**, then recreate the Docker agent with `make docker-agent-up` (or `systemctl --user restart opsdeck-agent` for a native agent):
+
+| Agent setting | Value |
+|---|---|
+| `OPSDECK_WORKSPACE_URL` | `http://127.0.0.1:8080` |
+| `OPSDECK_WORKSPACE_TOKEN` | This host's `OPSDECK_TOKEN` from `.env.workspace` |
+
+The API and agent must have separate Compose project names and data volumes; never replace the API with the agent command under the same project. Keep the local API on loopback. No inbound host port is required by the central dashboard. Check its `/healthz`, then check `workspace_connected` on `/api/fleet/nodes/{id}`. **Agent access** retains telemetry while a workspace is disconnected. One agent and one local API serve all runners registered on that machine; enroll additional machines separately.
 
 ## Configuration and connectivity
 
@@ -179,4 +220,4 @@ Never reuse one host's credential on another host or copy its queue to another i
 
 Back up the central database with `make docker-backup`, including enrolled identities, credential hashes, latest observations, history, and access audit records. Protect the backup like the dashboard. Restore the SQLite backup using the existing [maintenance procedure](maintenance.md). Keep `.env` and Caddy certificate volumes in your instance backup plan separately.
 
-This release uses a single server process and SQLite on local persistent storage. It caps enrollment at 1000 identities as a guardrail; this is not a tested capacity claim. Size retention, storage, and agent frequency for your actual fleet. It has one operator credential, with no individual accounts or RBAC. Arbitrary remote shell commands, cross-host GitLab aggregation and benchmark comparisons, cluster-local gateways, Kubernetes API collection, and DaemonSet packaging are not implemented. Connected host workspaces retain their existing integration, survey, and operator workflows. Existing standalone databases are not automatically merged into fleet history.
+This release uses a single server process and SQLite on local persistent storage. It caps enrollment at 1000 identities as a guardrail; this is not a tested capacity claim. Size retention, storage, and agent frequency for your actual fleet. It supports one administrator username/password account and a private operator API credential, with no individual accounts or RBAC. Arbitrary remote shell commands, cross-host GitLab aggregation and benchmark comparisons, cluster-local gateways, Kubernetes API collection, and DaemonSet packaging are not implemented. Connected host workspaces retain their existing integration, survey, and operator workflows. Existing standalone databases are not automatically merged into fleet history.

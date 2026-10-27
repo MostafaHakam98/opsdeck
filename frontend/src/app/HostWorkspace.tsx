@@ -92,6 +92,7 @@ import {
   gridProps,
 } from "../components/chartTheme";
 import { LiveIndicator } from "../components/LiveIndicator";
+import { LoadingState, RequestProgress } from "../components/LoadingState";
 
 function SourceNotice({ source, name }: { source?: Source; name: string }) {
   if (!source || (source.status === "healthy" && !source.stale)) return null;
@@ -174,12 +175,22 @@ function Chart({
   keys,
   percent = true,
   count = false,
+  loading = false,
 }: {
   history: History[];
   keys: Array<[string, string, string]>;
   percent?: boolean;
   count?: boolean;
+  loading?: boolean;
 }) {
+  if (loading && !history.length)
+    return (
+      <LoadingState
+        title="Loading history"
+        detail="Retrieving retained resource samples."
+        skeleton={false}
+      />
+    );
   if (history.length < 2)
     return (
       <Empty
@@ -311,6 +322,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
   const [events, setEvents] = useState<Event[]>([]);
   const [hours, setHours] = useState(1);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [query, setQuery] = useState("");
@@ -329,40 +341,79 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
   const [scope, setScope] = useState<Scope>(defaultScope);
   const workload = useWorkloads(token, scope, refresh);
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     let active = true;
+    let inFlight = false;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     async function load() {
-      try {
-        const [s, h, e] = await Promise.all([
-          api<Snapshot>("snapshot", token, undefined, controller.signal),
-          api<History[]>(
-            `history?hours=${hours}`,
-            token,
-            undefined,
-            controller.signal,
-          ),
-          api<Event[]>("events", token, undefined, controller.signal),
-        ]);
-        if (active) {
-          setSnapshot(s);
-          setHistory(h);
-          setEvents(e);
-          setUpdatedAt(Date.now());
-          setError("");
-        }
-      } catch (err) {
-        if (active) setError((err as Error).message);
-      }
+      if (inFlight || !active) return;
+      inFlight = true;
+      setLoading(true);
+      const results = await Promise.allSettled([
+        api<Snapshot>("snapshot", token, undefined, controller.signal).then(
+          (value) => {
+            if (active) {
+              setSnapshot(value);
+              setUpdatedAt(Date.now());
+            }
+          },
+        ),
+        api<History[]>(
+          `history?hours=${hours}`,
+          token,
+          undefined,
+          controller.signal,
+        ).then((value) => {
+          if (active) setHistory(value);
+        }),
+        api<Event[]>("events", token, undefined, controller.signal).then(
+          (value) => {
+            if (active) setEvents(value);
+          },
+        ),
+      ]);
+      inFlight = false;
+      if (!active) return;
+      const failed = results.flatMap((result, index) =>
+        result.status === "rejected"
+          ? [
+              `${["Host readings", "History", "Activity"][index]}: ${(result.reason as Error).message}`,
+            ]
+          : [],
+      );
+      setError(failed.join(" "));
+      setLoading(false);
+      failures = failed.length ? failures + 1 : 0;
+      if (!document.hidden)
+        timer = setTimeout(
+          () => void load(),
+          failures ? Math.min(60000, 5000 * 2 ** (failures - 1)) : 10000,
+        );
     }
+    function reconnect() {
+      clearTimeout(timer);
+      if (!document.hidden) void load();
+    }
+    function visibility() {
+      if (document.hidden) clearTimeout(timer);
+      else reconnect();
+    }
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("online", reconnect);
     void load();
-    const timer = window.setInterval(load, 10000);
     return () => {
       active = false;
       controller.abort();
-      clearInterval(timer);
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("online", reconnect);
     };
-  }, [token, hours, refresh]);
+  }, [api, token, hours, refresh]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 8000);
@@ -701,9 +752,13 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               className="icon-button"
               aria-label="Refresh metrics"
               title="Refresh now"
+              disabled={loading}
               onClick={() => setRefresh((v) => v + 1)}
             >
-              <RefreshCw size={16} />
+              <RefreshCw
+                size={16}
+                className={loading ? "loading-spin" : undefined}
+              />
             </button>
             <ThemeToggle />
             <span className="topbar-divider" aria-hidden="true" />
@@ -716,6 +771,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               <LogOut size={16} />
             </button>
           </div>
+          <RequestProgress />
         </header>
         <main className="content">
           <div className="page-heading">
@@ -736,14 +792,30 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
             <div className="notice error" role="alert">
               <TriangleAlert size={18} />
               <div>
-                <strong>Refresh failed</strong>
-                <p>{error} Existing values are the last successful snapshot.</p>
+                <strong>
+                  {snapshot
+                    ? "Some data could not refresh"
+                    : "Host data is unavailable"}
+                </strong>
+                <p>{error}</p>
+                <p>
+                  {snapshot
+                    ? "Available readings are kept on screen. Failed sections retain their last values."
+                    : "Check the host connection or open Agent access for retained observations."}{" "}
+                  Updates will retry automatically.
+                </p>
                 <button
                   className="text-button"
+                  disabled={loading}
                   onClick={() => setRefresh((v) => v + 1)}
                 >
-                  Retry
+                  {loading ? "Reconnecting…" : "Retry now"}
                 </button>
+                {fleet && !snapshot && (
+                  <button className="text-button" onClick={fleet.onAgent}>
+                    Open Agent access
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -752,13 +824,8 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               {snapshot.history_error}
             </div>
           )}
-          {!snapshot && !error && (
-            <Empty
-              title="Connecting to your infrastructure"
-              text="Collectors run independently. Your first host sample will appear shortly."
-            />
-          )}
-          {current.scoped && (
+          {!snapshot && !error && <LoadingState />}
+          {snapshot && current.scoped && (
             <ScopeControls
               scope={scope}
               setScope={setScope}
@@ -766,14 +833,14 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               error={workload.error}
             />
           )}
-          {page === "projects" && (
+          {snapshot && page === "projects" && (
             <PipelineDiagnostics
               pipelines={pipelines}
               jobs={jobs}
               fresh={ciKnown && !sources.gitlab?.stale}
             />
           )}
-          {page === "projects" && (
+          {snapshot && page === "projects" && (
             <WorkloadExplorer
               onScope={setScope}
               token={token}
@@ -782,7 +849,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               onRefresh={() => setRefresh((value) => value + 1)}
             />
           )}
-          {page === "overview" && (
+          {snapshot && page === "overview" && (
             <>
               <SourceNotice source={sources.host} name="Host" />
               {host?.scope === "container" && (
@@ -840,6 +907,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                   }
                 >
                   <Chart
+                    loading={loading}
                     history={history}
                     keys={[
                       ["cpu", "CPU", "var(--series-1)"],
@@ -969,6 +1037,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                   note="Whole node · bytes per second"
                 >
                   <Chart
+                    loading={loading}
                     history={history}
                     percent={false}
                     keys={[
@@ -989,6 +1058,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                   {history.filter((sample) => sample.queued != null).length >=
                   2 ? (
                     <Chart
+                      loading={loading}
                       history={history}
                       percent={false}
                       count
@@ -1008,7 +1078,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               </div>
             </>
           )}
-          {page === "host" && (
+          {snapshot && page === "host" && (
             <>
               <SourceNotice source={sources.host} name="Host" />
               {host?.scope === "container" && (
@@ -1354,7 +1424,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               </div>
             </>
           )}
-          {page === "host" && (
+          {snapshot && page === "host" && (
             <>
               <Panel title="System services">
                 <SourceNotice source={sources.services} name="Services" />
@@ -1435,7 +1505,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               </Panel>
             </>
           )}
-          {page === "docker" && (
+          {snapshot && page === "docker" && (
             <>
               <SourceNotice source={sources.docker} name="Docker" />
               <div className="summary-row">
@@ -1653,14 +1723,14 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               </div>
             </>
           )}
-          {page === "operations" && (
+          {snapshot && page === "operations" && (
             <OperatorConsole
               token={token}
               images={allDocker?.images || []}
               onChanged={() => setRefresh((value) => value + 1)}
             />
           )}
-          {page === "survey" && (
+          {snapshot && page === "survey" && (
             <>
               <LiveCheckpoints
                 token={token}
@@ -1695,10 +1765,10 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               )}
             </>
           )}
-          {page === "optimization" && (
+          {snapshot && page === "optimization" && (
             <RecordedOptimizations archive={sources.findings?.data} />
           )}
-          {page === "gitlab" && (
+          {snapshot && page === "gitlab" && (
             <>
               <PipelineDiagnostics
                 pipelines={pipelines}
@@ -1725,7 +1795,8 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               />
             </>
           )}
-          {page === "gitlab" &&
+          {snapshot &&
+            page === "gitlab" &&
             sources.gitlab?.status !== "not_configured" &&
             sources.gitlab?.status !== "collecting" && (
               <>
@@ -1922,7 +1993,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                 </Panel>
               </>
             )}
-          {page === "optimization" && (
+          {snapshot && page === "optimization" && (
             <>
               <div className="optimization-intro">
                 <SlidersHorizontal size={25} />
@@ -1988,7 +2059,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               </Panel>
             </>
           )}
-          {page === "activity" && (
+          {snapshot && page === "activity" && (
             <>
               <Panel title="Active conditions" note={`${alerts.length} active`}>
                 {alerts.length ? (
@@ -2027,7 +2098,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               </Panel>
             </>
           )}
-          {page === "connections" && (
+          {snapshot && page === "connections" && (
             <>
               <GitLabSetup
                 token={token}

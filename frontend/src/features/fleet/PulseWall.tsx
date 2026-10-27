@@ -1,4 +1,11 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Section, Segmented, StatusDot } from "./FleetComponents";
 import {
   bucketRange,
@@ -203,6 +210,14 @@ export function PulseWall({
       ),
     [nodes, pulse, metric],
   );
+  // Narrow screens scroll the wall sideways; keep the newest minutes in view
+  // instead of opening on the oldest, mostly empty, columns.
+  const scroller = useRef<HTMLDivElement>(null);
+  const hasNodes = nodes.length > 0;
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [hasNodes, minutes]);
   const activeNode = active && nodes.find((n) => n.id === active.id);
   const activeValue = active ? series.get(active.id)?.[active.index] : null;
   const bucketMinutes = pulse
@@ -244,7 +259,7 @@ export function PulseWall({
         </p>
       )}
       {nodes.length ? (
-        <div className="pulse-scroll">
+        <div className="pulse-scroll" ref={scroller}>
           <div className="pulse-grid">
             <div className="pulse-axis" aria-hidden="true">
               <span />

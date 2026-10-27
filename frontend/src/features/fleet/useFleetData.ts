@@ -59,6 +59,7 @@ export function useFleetData(options: FleetDataOptions) {
   const [fleetHistoryError, setFleetHistoryError] = useState("");
   const [error, setError] = useState("");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [fetching, setFetching] = useState(false);
   const overview = view === "fleet" && !selected;
   const pulseAt = useRef(0);
   const historyAt = useRef(0);
@@ -71,6 +72,7 @@ export function useFleetData(options: FleetDataOptions) {
   }, [fleetHours, cluster, token]);
   useEffect(() => {
     if (!token) {
+      setFetching(false);
       setFleet(null);
       setDetail(null);
       setHistory([]);
@@ -133,6 +135,7 @@ export function useFleetData(options: FleetDataOptions) {
     async function load() {
       if (loading) return;
       loading = true;
+      setFetching(true);
       clearTimeout(timer);
       loadAggregates();
       const audit = `events?limit=${auditLimit}${auditQuery ? `&q=${encodeURIComponent(auditQuery)}` : ""}`;
@@ -145,6 +148,7 @@ export function useFleetData(options: FleetDataOptions) {
       );
       loading = false;
       if (!active) return;
+      setFetching(false);
       const failed = [fleetResult, detailResult, auditResult].find(
         (r) => r.status === "rejected",
       ) as PromiseRejectedResult | undefined;
@@ -175,12 +179,14 @@ export function useFleetData(options: FleetDataOptions) {
       else if (!paused) void load();
     }
     document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("online", visibility);
     void load();
     return () => {
       active = false;
       controller.abort();
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("online", visibility);
     };
   }, [
     token,
@@ -213,6 +219,7 @@ export function useFleetData(options: FleetDataOptions) {
     fleetHistoryError,
     error,
     updatedAt,
+    fetching,
     clearHost,
     clearHistory,
     clearFleetHistory,

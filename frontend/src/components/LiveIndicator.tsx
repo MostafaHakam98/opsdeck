@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Pause, Play } from "lucide-react";
+import { Pause, Play, RefreshCw } from "lucide-react";
+import { useRequestActivity } from "./LoadingState";
 import "./overlays.css";
 
 /** Compact age for the live indicator: "4s", "3m", "2h". */
@@ -23,6 +24,7 @@ export function LiveIndicator({
   onTogglePause?: () => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
+  const activity = useRequestActivity();
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -37,14 +39,21 @@ export function LiveIndicator({
         : age > 120
           ? "stale"
           : "live";
+  const working = !paused && activity.pending > 0;
   const label =
-    state === "reconnecting"
-      ? "Reconnecting"
-      : state === "paused"
-        ? "Paused"
-        : state === "connecting"
-          ? "Connecting"
-          : `Live, updated ${formatAge(age!)} ago`;
+    working && (activity.retrying || error)
+      ? "Reconnecting…"
+      : working
+        ? updatedAt === null
+          ? "Loading…"
+          : "Updating…"
+        : state === "reconnecting"
+          ? "Reconnecting"
+          : state === "paused"
+            ? "Paused"
+            : state === "connecting"
+              ? "Connecting"
+              : `${state === "stale" ? "Last updated" : "Live, updated"} ${formatAge(age!)} ago`;
   const announcement =
     state === "reconnecting"
       ? "Reconnecting"
@@ -64,7 +73,11 @@ export function LiveIndicator({
             : undefined)
         }
       >
-        <i aria-hidden="true" />
+        {working ? (
+          <RefreshCw size={12} className="loading-spin" aria-hidden="true" />
+        ) : (
+          <i aria-hidden="true" />
+        )}
         <span>{label}</span>
       </span>
       <span className="visually-hidden" role="status">

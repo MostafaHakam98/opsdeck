@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { ArrowRight, Eye, EyeOff, LockKeyhole } from "lucide-react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { ArrowRight, Eye, EyeOff, LockKeyhole, RefreshCw } from "lucide-react";
+import { LoadingState } from "../components/LoadingState";
 import { api } from "../lib/api";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { BrandMark } from "../components/AppSidebar";
@@ -38,6 +39,33 @@ export function SignIn({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
+  const [username, setUsername] = useState("");
+  const [configurationAttempt, setConfigurationAttempt] = useState(0);
+  const [mode, setMode] = useState<"token" | "password" | null>(
+    central ? null : "token",
+  );
+  useEffect(() => {
+    if (!central) return;
+    let active = true;
+    const controller = new AbortController();
+    api<{ mode: "token" | "password" }>(
+      "auth/config",
+      "",
+      undefined,
+      controller.signal,
+    )
+      .then((result) => {
+        if (active) setMode(result.mode);
+      })
+      .catch((err) => {
+        if (active) setError(signInError(err));
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [central, configurationAttempt]);
+  const passwordLogin = mode === "password";
   return (
     <main className="login sign-in">
       <div className="login-theme">
@@ -55,7 +83,15 @@ export function SignIn({
           {pulse.map((row, r) => (
             <div key={r}>
               {row.map((level, c) => (
-                <i key={c} style={{ background: `var(--heat-${level})` }} />
+                <i
+                  key={c}
+                  style={
+                    {
+                      background: `var(--heat-${level})`,
+                      "--c": c,
+                    } as CSSProperties
+                  }
+                />
               ))}
             </div>
           ))}
@@ -68,13 +104,22 @@ export function SignIn({
       </section>
       <form
         className="login-card"
+        aria-busy={busy || (mode === null && !error)}
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
           setError("");
           try {
-            await api("snapshot", value);
-            onSignIn(value);
+            if (passwordLogin) {
+              const result = await api<{ token: string }>("auth/login", "", {
+                username,
+                password: value,
+              });
+              onSignIn(result.token);
+            } else {
+              await api("snapshot", value);
+              onSignIn(value);
+            }
           } catch (err) {
             setError(signInError(err));
           } finally {
@@ -83,41 +128,102 @@ export function SignIn({
         }}
       >
         <h1>Open your workspace</h1>
-        <p>Use the access token configured on your OpsDeck server.</p>
-        <label htmlFor="token">Access token</label>
-        <div className="token-field">
-          <input
-            id="token"
-            type={visible ? "text" : "password"}
-            autoComplete="off"
-            spellCheck={false}
-            autoCapitalize="off"
-            required
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="Paste your server access token"
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? "token-error" : "token-note"}
+        <p>
+          {mode === null
+            ? "Connecting to your OpsDeck server…"
+            : passwordLogin
+              ? "Sign in with your administrator account."
+              : "Use the access token configured on your OpsDeck server."}
+        </p>
+        {mode === null && !error && (
+          <LoadingState
+            title="Preparing sign-in…"
+            detail="Checking your server’s sign-in settings."
+            skeleton={false}
           />
-          <button
-            type="button"
-            className="token-reveal"
-            aria-label={visible ? "Hide access token" : "Show access token"}
-            aria-pressed={visible}
-            title={visible ? "Hide access token" : "Show access token"}
-            onClick={() => setVisible((v) => !v)}
-          >
-            {visible ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
-        </div>
+        )}
+        {mode !== null && (
+          <>
+            {passwordLogin && (
+              <>
+                <label htmlFor="username">Username</label>
+                <input
+                  id="username"
+                  autoComplete="username"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  required
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                />
+              </>
+            )}
+            <label htmlFor="token">
+              {passwordLogin ? "Password" : "Access token"}
+            </label>
+            <div className="token-field">
+              <input
+                id="token"
+                type={visible ? "text" : "password"}
+                autoComplete={passwordLogin ? "current-password" : "off"}
+                spellCheck={false}
+                autoCapitalize="off"
+                required
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={
+                  passwordLogin
+                    ? "Enter your password"
+                    : "Paste your server access token"
+                }
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "token-error" : "token-note"}
+              />
+              <button
+                type="button"
+                className="token-reveal"
+                aria-label={
+                  visible
+                    ? `Hide ${passwordLogin ? "password" : "access token"}`
+                    : `Show ${passwordLogin ? "password" : "access token"}`
+                }
+                aria-pressed={visible}
+                title={
+                  visible
+                    ? `Hide ${passwordLogin ? "password" : "access token"}`
+                    : `Show ${passwordLogin ? "password" : "access token"}`
+                }
+                onClick={() => setVisible((v) => !v)}
+              >
+                {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </>
+        )}
         {error && (
           <p className="error" id="token-error" role="alert">
             {error}
           </p>
         )}
-        <button className="primary" disabled={busy}>
+        {mode === null && error && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              setError("");
+              setConfigurationAttempt((value) => value + 1);
+            }}
+          >
+            Retry connection
+          </button>
+        )}
+        <button className="primary" disabled={busy || mode === null}>
           {busy ? "Connecting…" : "Connect to OpsDeck"}
-          <ArrowRight size={16} />
+          {busy ? (
+            <RefreshCw size={16} className="loading-spin" aria-hidden="true" />
+          ) : (
+            <ArrowRight size={16} />
+          )}
         </button>
         <small className="login-note" id="token-note">
           <LockKeyhole size={14} aria-hidden="true" />

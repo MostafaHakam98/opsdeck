@@ -22,6 +22,7 @@ class Settings:
     fleet_url: str = field(default_factory=lambda: os.getenv("OPSDECK_FLEET_URL", "").strip().rstrip("/"))
     token: str = field(default_factory=lambda: os.getenv("OPSDECK_TOKEN", ""))
     metrics_token: str = field(default_factory=lambda: os.getenv("OPSDECK_METRICS_TOKEN", "").strip())
+    admin_file: str = field(default_factory=lambda: os.getenv("OPSDECK_ADMIN_FILE", "./data/admin.json"))
     db: str = field(default_factory=lambda: os.getenv("OPSDECK_DB", "./data/opsdeck.sqlite"))
     interval: int = field(default_factory=lambda: max(5, int(os.getenv("OPSDECK_SAMPLE_SECONDS", "10"))))
     retention: int = field(default_factory=lambda: max(1, int(os.getenv("OPSDECK_RETENTION_DAYS", "30"))))

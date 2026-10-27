@@ -2,15 +2,13 @@ import React, { lazy, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SignIn } from "./SignIn";
 import { WorkspaceBoundary } from "./WorkspaceBoundary";
-import "@fontsource/ibm-plex-sans/latin-400.css";
-import "@fontsource/ibm-plex-sans/latin-500.css";
-import "@fontsource/ibm-plex-sans/latin-600.css";
-import "@fontsource/barlow-semi-condensed/latin-500.css";
-import "@fontsource/barlow-semi-condensed/latin-600.css";
+import "@fontsource-variable/archivo/wdth.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "./styles.css";
 import { applyTheme, storedTheme } from "../components/ThemeToggle";
 import { BrandMark } from "../components/AppSidebar";
+import { requestJson } from "../lib/request";
+import { LoadingState } from "../components/LoadingState";
 applyTheme(storedTheme());
 const loadFleet = () => import("../features/fleet/FleetApp");
 const loadWorkspace = () => import("./HostWorkspace");
@@ -28,10 +26,9 @@ modeRequest.catch(() => undefined);
 preload(rememberedMode());
 
 function requestMode() {
-  return fetch("/healthz").then((response) => {
-    if (!response.ok) throw new Error("Server unavailable");
-    return response.json().then((data) => String(data.mode || "standalone"));
-  });
+  return requestJson<{ mode?: string }>("/healthz").then((data) =>
+    String(data.mode || "standalone"),
+  );
 }
 function rememberedMode() {
   try {
@@ -83,12 +80,19 @@ function Deployment() {
       <main className="login" aria-busy={!error}>
         <div className="login-status">
           <BrandMark size={22} />
-          <p role={error ? "alert" : "status"}>
-            {error
-              ? `${error.replace(/\.$/, "")}. Check that the OpsDeck server is running, then retry.`
-              : "Connecting to OpsDeck..."}
-          </p>
-          {!error && <span className="skeleton" aria-hidden="true" />}
+          {error && (
+            <p role="alert">
+              {error.replace(/\.$/, "")}. Check that the OpsDeck server is
+              running, then retry.
+            </p>
+          )}
+          {!error && (
+            <LoadingState
+              title="Connecting to OpsDeck…"
+              detail="Checking the connection and preparing your workspace."
+              skeleton={false}
+            />
+          )}
         </div>
         {error && (
           <button

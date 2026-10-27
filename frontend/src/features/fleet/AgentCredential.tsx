@@ -60,6 +60,14 @@ export function AgentCredential({
         </ol>
         <pre>make agent-install</pre>
         <p>
+          This connects fleet telemetry. To open this host’s full workspace,
+          also run its local OpsDeck API and set{" "}
+          <code>OPSDECK_WORKSPACE_URL</code> and{" "}
+          <code>OPSDECK_WORKSPACE_TOKEN</code> in <code>.env.agent</code>, then
+          restart the agent. Use one agent per machine, including machines with
+          several runners.
+        </p>
+        <p>
           To try it in the foreground first, run{" "}
           <code>.venv/bin/python -m backend.agent</code>. Full steps are in{" "}
           <code>docs/operations/fleet.md</code>.

@@ -10,6 +10,7 @@ import {
 import { bytes, type Upload } from "../../lib/api";
 import { Pager } from "../../components/Pager";
 import { tone } from "../../components/Status";
+import { LoadingState } from "../../components/LoadingState";
 
 type Facts = {
   concurrent: number;
@@ -75,6 +76,7 @@ export function OperatorConsole({
   const [cap, setCap] = useState<Capabilities>();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState("");
+  const [connectionError, setConnectionError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState<Review>();
@@ -102,6 +104,7 @@ export function OperatorConsole({
       api<Capabilities>("operations/capabilities", token, undefined, signal),
       api<Job[]>("operations/jobs", token, undefined, signal),
     ]);
+    if (signal?.aborted) return;
     setCap(next);
     setJobs(tasks);
     if (!initialized.current && next.runner.available && next.runner.facts) {
@@ -111,17 +114,23 @@ export function OperatorConsole({
   }
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal).catch((e) => {
-      if (!controller.signal.aborted) setError(e.message);
-    });
-    const timer = window.setInterval(() => {
-      void load(controller.signal).catch((e) => {
-        if (!controller.signal.aborted) setError(e.message);
-      });
-    }, 5000);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function poll() {
+      try {
+        await load(controller.signal);
+        if (!controller.signal.aborted) setConnectionError("");
+      } catch (err) {
+        if (!controller.signal.aborted)
+          setConnectionError((err as Error).message);
+      } finally {
+        if (!controller.signal.aborted)
+          timer = setTimeout(() => void poll(), 5000);
+      }
+    }
+    void poll();
     return () => {
       controller.abort();
-      clearInterval(timer);
+      clearTimeout(timer);
       uploadAbort.current?.abort();
     };
   }, [token]);
@@ -192,6 +201,21 @@ export function OperatorConsole({
     jobPage,
     Math.max(1, Math.ceil(filteredJobs.length / 10)),
   );
+  if (!cap)
+    return (
+      <>
+        {connectionError && (
+          <p className="notice error" role="alert">
+            {connectionError} Reconnecting automatically.
+          </p>
+        )}
+        <LoadingState
+          title="Loading operations"
+          detail="Checking available controls and recent tasks."
+          skeleton={false}
+        />
+      </>
+    );
   return (
     <>
       <div className="notice">
@@ -204,9 +228,9 @@ export function OperatorConsole({
           </p>
         </div>
       </div>
-      {error && (
+      {(error || connectionError) && (
         <div className="notice error" role="alert">
-          {error}
+          {error || connectionError}
         </div>
       )}
       {message && (

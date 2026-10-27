@@ -12,7 +12,7 @@
   gap: 10px 14px;
   padding: 10px 32px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--bg);
   color: var(--text-muted);
 }
 .fleet-topbar-tools,
@@ -76,9 +76,9 @@
 .fleet-title h1,
 .fleet-node-heading h1 {
   font-family: var(--font-display);
-  font-size: 34px;
-  font-weight: 600;
-  line-height: 1.15;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.12;
   margin: 0 0 6px;
   overflow-wrap: anywhere;
 }
@@ -97,7 +97,7 @@
   align-items: center;
   padding: 2px 8px;
   border: 1px solid var(--info-line);
-  border-radius: 999px;
+  border-radius: 4px;
   background: var(--info-soft);
   color: var(--info);
   font-size: 12px;
@@ -121,7 +121,7 @@
   flex-shrink: 0;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--text-faint);
 }
 .fleet-status-online,
@@ -195,13 +195,17 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px 16px;
-  padding: 14px 18px;
+  min-height: 52px;
+  padding: 9px 18px;
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 .fleet-section-head h2 {
   font-family: var(--font-body);
+  font-stretch: 106%;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: 0;
   margin: 0;
 }
 .fleet-section-actions {
@@ -388,8 +392,9 @@
 .fleet-kpis dd {
   margin: 4px 0 2px;
   font-family: var(--font-display);
-  font-size: 34px;
-  font-weight: 600;
+  font-stretch: var(--stretch-readout);
+  font-size: 40px;
+  font-weight: 620;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -397,7 +402,7 @@
 .fleet-kpis dd.is-na {
   display: flex;
   align-items: flex-end;
-  height: 39px;
+  height: 45px;
   padding-bottom: 4px;
   color: var(--text-faint);
   font-family: var(--font-body);
@@ -802,21 +807,32 @@ button.fleet-alert:hover {
   gap: 12px;
   padding: 10px 18px 18px;
 }
+/* Host cards read like rack units: the left edge carries the host state. */
 .host-card {
+  --unit-state: var(--border-strong);
   display: grid;
   gap: 10px;
   align-content: start;
   min-width: 0;
-  padding: 14px;
+  padding: 14px 14px 14px 17px;
   border: 1px solid var(--border);
   border-radius: var(--radius, 10px);
   background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--unit-state);
+}
+.host-card[data-state="online"] {
+  --unit-state: var(--good);
 }
 .host-card[data-state="offline"] {
+  --unit-state: var(--bad);
   border-color: var(--bad-line);
 }
 .host-card[data-state="stale"] {
+  --unit-state: var(--warn);
   border-color: var(--warn-line);
+}
+.host-card[data-state="maintenance"] {
+  --unit-state: var(--info);
 }
 .host-card > header {
   display: flex;
@@ -853,14 +869,14 @@ button.fleet-alert:hover {
 }
 .fleet-minibar-track {
   height: 6px;
-  border-radius: 3px;
   background: var(--surface-3);
+  -webkit-mask-image: var(--meter-mask);
+  mask-image: var(--meter-mask);
   overflow: hidden;
 }
 .fleet-minibar-track i {
   display: block;
   height: 100%;
-  border-radius: 3px;
 }
 .fleet-minibar strong {
   text-align: right;
@@ -1318,16 +1334,16 @@ button.fleet-alert:hover {
 }
 .fleet-usage {
   display: block;
-  height: 4px;
+  height: 6px;
   min-width: 48px;
-  border-radius: 2px;
   background: var(--surface-3);
+  -webkit-mask-image: var(--meter-mask);
+  mask-image: var(--meter-mask);
   overflow: hidden;
 }
 .fleet-usage i {
   display: block;
   height: 100%;
-  border-radius: 2px;
   background: var(--good);
 }
 .fleet-usage-warn i {

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, f
 from backend.store import Store
 from backend.web import HashedAssets, SelectiveGZip
 from backend.workspace import WorkspaceRelay
+from backend.auth import AdminAuth
 
 MAX_TELEMETRY_BYTES = 2 * 1024 * 1024
 SOURCE_NAMES = ("host", "docker", "gpu", "runner", "services")
@@ -406,6 +407,7 @@ class Fleet(Store):
 
 def create_fleet_app(settings):
     fleet = Fleet(settings.db)
+    admin = AdminAuth(settings.admin_file, settings.db, settings.token)
     attempts = {}
     relay = WorkspaceRelay(str(settings.db) + ".workspace", settings.image_upload_max_gib * 1024 ** 3)
 
@@ -426,6 +428,7 @@ def create_fleet_app(settings):
     app.state.fleet = fleet
     app.state.version = settings.version
     app.state.workspace = relay
+    admin.routes(app)
 
     def bearer(authorization):
         return authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
@@ -433,7 +436,7 @@ def create_fleet_app(settings):
     def authenticate(request: Request, authorization: str | None = Header(default=None)):
         key = request.client.host if request.client else "unknown"
         recent = [t for t in attempts.get(key, []) if time.monotonic() - t < 60]
-        if not hmac.compare_digest(bearer(authorization).encode(), settings.token.encode()):
+        if not hmac.compare_digest(bearer(authorization).encode(), settings.token.encode()) and not admin.valid(bearer(authorization)):
             if len(recent) >= 30:
                 raise HTTPException(429, "Too many authentication failures; wait one minute")
             if len(attempts) > 1024:
