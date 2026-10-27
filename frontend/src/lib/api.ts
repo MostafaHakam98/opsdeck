@@ -1,3 +1,5 @@
+import { requestJson } from "./request";
+
 export type Source<T = any> = {
   status: string;
   data: T | null;
@@ -64,7 +66,7 @@ export async function api<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const response = await fetch(`/api/${path}`, {
+  return requestJson<T>(`/api/${path}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       ...(body ? { "Content-Type": "application/json" } : {}),
@@ -73,15 +75,6 @@ export async function api<T>(
     body: body ? JSON.stringify(body) : undefined,
     signal,
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(
-      response.status === 401 && path !== "auth/login"
-        ? "Access token is invalid or expired. Sign in again."
-        : payload.detail || `Request failed (${response.status})`,
-    );
-  }
-  return response.json();
 }
 export function bytes(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "n/a";

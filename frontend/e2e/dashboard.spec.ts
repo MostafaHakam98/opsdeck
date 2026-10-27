@@ -991,6 +991,10 @@ test("fleet retains the complete host sidebar and scopes every original page to 
   );
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/auth/config")
+      return route.fulfill({ json: { mode: "token" } });
+    if (url.pathname === "/api/auth/logout")
+      return route.fulfill({ json: { signed_out: true } });
     if (url.pathname === "/api/fleet" || url.pathname === "/api/snapshot") {
       return route.fulfill({ json: { nodes, retention_days: 30 } });
     }
@@ -1124,8 +1128,8 @@ test("GitLab setup waits for saved settings before allowing edits", async ({
   await page.route("**/api/integrations/gitlab", async (route) => {
     if (route.request().method() === "GET") {
       requested = true;
-      if (++reads === 1) {
-        await loaded;
+      if (++reads <= 3) {
+        if (reads === 1) await loaded;
         await route.fulfill({
           status: 503,
           json: { detail: "Temporary settings failure" },

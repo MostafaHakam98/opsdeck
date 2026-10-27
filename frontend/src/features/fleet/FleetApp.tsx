@@ -25,6 +25,7 @@ import {
   type Command,
 } from "../../components/CommandPalette";
 import { LiveIndicator } from "../../components/LiveIndicator";
+import { LoadingState, RequestProgress } from "../../components/LoadingState";
 import { ShortcutHelp, openShortcutHelp } from "../../components/ShortcutHelp";
 import { useHotkey } from "../../lib/useHotkey";
 import { AgentCredential } from "./AgentCredential";
@@ -300,7 +301,7 @@ export function FleetApp({
         <Suspense
           fallback={
             <main className="login">
-              <p>Opening host workspace…</p>
+              <LoadingState title="Opening host workspace…" skeleton={false} />
             </main>
           }
         >
@@ -523,9 +524,13 @@ export function FleetApp({
               className="fleet-icon-button"
               aria-label="Refresh fleet"
               title="Refresh now (R)"
+              disabled={data.fetching}
               onClick={refreshNow}
             >
-              <RefreshCw size={16} />
+              <RefreshCw
+                size={16}
+                className={data.fetching ? "loading-spin" : undefined}
+              />
             </button>
             <ThemeToggle />
             <button
@@ -536,8 +541,15 @@ export function FleetApp({
               <LogOut size={16} />
             </button>
           </div>
+          <RequestProgress />
         </header>
         <main className="fleet-main">
+          {!fleet && !error && (
+            <LoadingState
+              title="Loading your fleet"
+              detail="Checking host connections and their latest observations."
+            />
+          )}
           {error && (
             <div className="fleet-warning" role="alert">
               {error} Retained values may be out of date; OpsDeck keeps

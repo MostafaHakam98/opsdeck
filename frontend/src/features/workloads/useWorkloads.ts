@@ -38,6 +38,7 @@ export function useWorkloads(token: string, scope: Scope, refresh: number) {
       return;
     }
     const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     async function load() {
       try {
         const result = await api<WorkloadView>(
@@ -52,15 +53,25 @@ export function useWorkloads(token: string, scope: Scope, refresh: number) {
         }
       } catch (e) {
         if (!controller.signal.aborted) setError((e as Error).message);
+      } finally {
+        if (!controller.signal.aborted)
+          timer = setTimeout(() => void load(), 10000);
       }
     }
     void load();
-    const timer = window.setInterval(load, 10000);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      clearTimeout(timer);
     };
-  }, [token, scope.project, scope.pipeline, scope.image, scope.hours, refresh]);
+  }, [
+    api,
+    token,
+    scope.project,
+    scope.pipeline,
+    scope.image,
+    scope.hours,
+    refresh,
+  ]);
   return { data, error };
 }
 export function matchesScope(

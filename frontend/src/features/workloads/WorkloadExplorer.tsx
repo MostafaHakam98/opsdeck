@@ -5,6 +5,7 @@ import { Pager } from "../../components/Pager";
 import { scopeQuery, type Scope, type WorkloadView } from "./useWorkloads";
 import { WorkloadSummary } from "./ScopeControls";
 import { tone } from "../../components/Status";
+import { LoadingState } from "../../components/LoadingState";
 export function WorkloadExplorer({
   token,
   scope,
@@ -25,6 +26,7 @@ export function WorkloadExplorer({
     [page, setPage] = useState(1),
     [loaded, setLoaded] = useState<{ kind: string; value: WorkloadView }>(),
     [error, setError] = useState(""),
+    [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [historyPage, setHistoryPage] = useState<number | null>(1),
     [message, setMessage] = useState("");
@@ -42,7 +44,9 @@ export function WorkloadExplorer({
   ]);
   useEffect(() => {
     const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     async function load() {
+      setLoading(true);
       try {
         const result = await api<WorkloadView>(
           `workloads?${scopeQuery(scope)}&kind=${kind}&query=${encodeURIComponent(query)}&status=${status}&page=${page}`,
@@ -56,15 +60,20 @@ export function WorkloadExplorer({
         }
       } catch (e) {
         if (!controller.signal.aborted) setError((e as Error).message);
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          timer = setTimeout(() => void load(), 10000);
+        }
       }
     }
     void load();
-    const timer = window.setInterval(load, 10000);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      clearTimeout(timer);
     };
   }, [
+    api,
     token,
     scope.project,
     scope.pipeline,
@@ -74,7 +83,6 @@ export function WorkloadExplorer({
     query,
     status,
     page,
-    view,
   ]);
   const data = loaded?.kind === kind ? loaded.value : undefined;
   const projectNames = new Map(
@@ -147,7 +155,18 @@ export function WorkloadExplorer({
             {error}
           </p>
         )}
-        {data?.rows.length ? (
+        {loading && data && (
+          <p className="request-inline" role="status">
+            Updating retained records…
+          </p>
+        )}
+        {loading && !data ? (
+          <LoadingState
+            title="Loading workload records"
+            detail="Retrieving the selected repository and pipeline evidence."
+            skeleton={false}
+          />
+        ) : data?.rows.length ? (
           <div className="table-wrap">
             <table>
               <thead>

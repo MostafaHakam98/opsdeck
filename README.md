@@ -66,11 +66,13 @@ Application code lives in `backend/` and `frontend/`; deployment assets are grou
 |---|---|
 | [Getting started](docs/guides/getting-started.md) | Clone, first launch, and daily commands |
 | [User guide](docs/guides/user-guide.md) | Every page, chart, threshold, and action |
+| [Operator walkthrough](docs/guides/operator-walkthrough.md) | Step-by-step use, loading and recovery, and performance investigations |
 | [Configuration](docs/guides/configuration.md) | Environment reference and integrations |
 | [Runner surveys](docs/operations/surveys.md) | Private benchmark imports, recorded evidence, and current optimization checks |
 | [Live surveys](docs/operations/live-surveys.md) | Global filters, project/image attribution, checkpoints, and optional GitLab setup |
 | [Deployment](docs/operations/deployment.md) | Docker, Compose, GPU, native, offline, and cluster guidance |
 | [Fleet deployment](docs/operations/fleet.md) | AWS server, outbound agents, cluster views, and credentials |
+| [Adding machines and runners](docs/operations/adding-machines.md) | New host setup, full workspace connectivity, and enrollment checks |
 | [Operations](docs/operations/maintenance.md) | Health, logs, backup/restore, updates, and optimization |
 | [Architecture](docs/architecture/overview.md) | Data flow, API, permissions, and limits |
 | [Troubleshooting](docs/guides/troubleshooting.md) | Diagnose startup and missing telemetry |

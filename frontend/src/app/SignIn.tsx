@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { ArrowRight, Eye, EyeOff, LockKeyhole } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LockKeyhole, RefreshCw } from "lucide-react";
+import { LoadingState } from "../components/LoadingState";
 import { api } from "../lib/api";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { BrandMark } from "../components/AppSidebar";
@@ -39,13 +40,20 @@ export function SignIn({
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
   const [username, setUsername] = useState("");
+  const [configurationAttempt, setConfigurationAttempt] = useState(0);
   const [mode, setMode] = useState<"token" | "password" | null>(
     central ? null : "token",
   );
   useEffect(() => {
     if (!central) return;
     let active = true;
-    api<{ mode: "token" | "password" }>("auth/config", "")
+    const controller = new AbortController();
+    api<{ mode: "token" | "password" }>(
+      "auth/config",
+      "",
+      undefined,
+      controller.signal,
+    )
       .then((result) => {
         if (active) setMode(result.mode);
       })
@@ -54,8 +62,9 @@ export function SignIn({
       });
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [central]);
+  }, [central, configurationAttempt]);
   const passwordLogin = mode === "password";
   return (
     <main className="login sign-in">
@@ -95,6 +104,7 @@ export function SignIn({
       </section>
       <form
         className="login-card"
+        aria-busy={busy || (mode === null && !error)}
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -125,68 +135,95 @@ export function SignIn({
               ? "Sign in with your administrator account."
               : "Use the access token configured on your OpsDeck server."}
         </p>
-        {passwordLogin && (
+        {mode === null && !error && (
+          <LoadingState
+            title="Preparing sign-in…"
+            detail="Checking your server’s sign-in settings."
+            skeleton={false}
+          />
+        )}
+        {mode !== null && (
           <>
-            <label htmlFor="username">Username</label>
-            <input
-              id="username"
-              autoComplete="username"
-              autoCapitalize="off"
-              spellCheck={false}
-              required
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-            />
+            {passwordLogin && (
+              <>
+                <label htmlFor="username">Username</label>
+                <input
+                  id="username"
+                  autoComplete="username"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  required
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                />
+              </>
+            )}
+            <label htmlFor="token">
+              {passwordLogin ? "Password" : "Access token"}
+            </label>
+            <div className="token-field">
+              <input
+                id="token"
+                type={visible ? "text" : "password"}
+                autoComplete={passwordLogin ? "current-password" : "off"}
+                spellCheck={false}
+                autoCapitalize="off"
+                required
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={
+                  passwordLogin
+                    ? "Enter your password"
+                    : "Paste your server access token"
+                }
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "token-error" : "token-note"}
+              />
+              <button
+                type="button"
+                className="token-reveal"
+                aria-label={
+                  visible
+                    ? `Hide ${passwordLogin ? "password" : "access token"}`
+                    : `Show ${passwordLogin ? "password" : "access token"}`
+                }
+                aria-pressed={visible}
+                title={
+                  visible
+                    ? `Hide ${passwordLogin ? "password" : "access token"}`
+                    : `Show ${passwordLogin ? "password" : "access token"}`
+                }
+                onClick={() => setVisible((v) => !v)}
+              >
+                {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </>
         )}
-        <label htmlFor="token">
-          {passwordLogin ? "Password" : "Access token"}
-        </label>
-        <div className="token-field">
-          <input
-            id="token"
-            type={visible ? "text" : "password"}
-            autoComplete={passwordLogin ? "current-password" : "off"}
-            spellCheck={false}
-            autoCapitalize="off"
-            required
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={
-              passwordLogin
-                ? "Enter your password"
-                : "Paste your server access token"
-            }
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? "token-error" : "token-note"}
-          />
-          <button
-            type="button"
-            className="token-reveal"
-            aria-label={
-              visible
-                ? `Hide ${passwordLogin ? "password" : "access token"}`
-                : `Show ${passwordLogin ? "password" : "access token"}`
-            }
-            aria-pressed={visible}
-            title={
-              visible
-                ? `Hide ${passwordLogin ? "password" : "access token"}`
-                : `Show ${passwordLogin ? "password" : "access token"}`
-            }
-            onClick={() => setVisible((v) => !v)}
-          >
-            {visible ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
-        </div>
         {error && (
           <p className="error" id="token-error" role="alert">
             {error}
           </p>
         )}
+        {mode === null && error && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              setError("");
+              setConfigurationAttempt((value) => value + 1);
+            }}
+          >
+            Retry connection
+          </button>
+        )}
         <button className="primary" disabled={busy || mode === null}>
           {busy ? "Connecting…" : "Connect to OpsDeck"}
-          <ArrowRight size={16} />
+          {busy ? (
+            <RefreshCw size={16} className="loading-spin" aria-hidden="true" />
+          ) : (
+            <ArrowRight size={16} />
+          )}
         </button>
         <small className="login-note" id="token-note">
           <LockKeyhole size={14} aria-hidden="true" />
