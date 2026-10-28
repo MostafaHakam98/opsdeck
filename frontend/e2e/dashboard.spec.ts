@@ -77,6 +77,10 @@ test("real API authentication, hardware, all pages, and unavailable integrations
   await expect(
     page.getByText("not configured", { exact: true }).first(),
   ).toBeVisible();
+  await expect(page.getByText("How to set this up").first()).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy command" }).first(),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await page.screenshot({
     path: "../.tmp/opsdeck-desktop.png",

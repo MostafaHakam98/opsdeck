@@ -13,6 +13,8 @@ Start with the exact failing command and its first meaningful error. Use **Conne
 | Frontend not built | `frontend/dist/index.html` | Run `make build`; Docker builds it automatically |
 | Portable container cannot be reached | Published IP/port and container bind | Compose sets internal bind to all interfaces; check localhost publishing and external port |
 | Host-mode health check fails on a private binding | Address exists on the host; app logs | Use the actual Tailscale/interface address in `OPSDECK_BIND`; restart |
+| `services.opsdeck.gpus must be a list` | `docker compose version` | The Compose plugin is too old for the GPU override; install a newer plugin (per user under `~/.docker/cli-plugins` needs no sudo) |
+| `the --mount option requires BuildKit` | `docker buildx version` | The buildx plugin is missing; install it the same way, then rebuild |
 
 Use `make docker-logs` or `make service-logs` for process errors. Liveness can pass while an integration remains unavailable.
 

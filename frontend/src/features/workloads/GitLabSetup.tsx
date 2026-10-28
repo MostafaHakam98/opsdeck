@@ -156,7 +156,8 @@ export function GitLabSetup({
               />
               <small>
                 Stored privately on this node. Saved credentials are never
-                returned by the API or included in checkpoints.
+                returned by the API or included in checkpoints. To create one,
+                open How to set this up under GitLab projects below.
               </small>
             </label>
             <label>
