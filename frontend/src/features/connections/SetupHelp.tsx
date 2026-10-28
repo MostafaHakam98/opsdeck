@@ -134,12 +134,23 @@ export const setupGuides: Record<string, Guide> = {
   },
   services: {
     intro:
-      "Shows the state of docker.service and gitlab-runner.service. Containers usually cannot reach the host's systemd bus, so the host exports that state to a file every minute.",
+      "Shows the state of the units listed in OPSDECK_SERVICES. Containers usually cannot reach the host's systemd bus, so the host exports that state to a file every minute.",
     steps: [
       {
-        text: "Add a cron entry for the deployment account. It records the checkout path at install time.",
+        text: "Print the units this host's workspace expects:",
+        command: "grep -h '^OPSDECK_SERVICES' .env .env.workspace 2>/dev/null",
+      },
+      {
+        text: (
+          <>
+            Add a cron entry for the deployment account, with{" "}
+            <code>--services</code> set to exactly that list. A unit missing
+            from the export marks the whole source unavailable. The entry
+            records the checkout path at install time.
+          </>
+        ),
         command:
-          '(crontab -l 2>/dev/null; echo "* * * * * cd $PWD && /usr/bin/python3 -m deploy.export_services --output data/service-status.json --services docker.service,gitlab-runner.service") | crontab -',
+          '(crontab -l 2>/dev/null; echo "* * * * * cd $PWD && /usr/bin/python3 -m deploy.export_services --output data/service-status.json --services docker.service,gitlab-runner.service,tailscaled.service") | crontab -',
       },
       {
         text: "After a minute, confirm the export is fresh:",

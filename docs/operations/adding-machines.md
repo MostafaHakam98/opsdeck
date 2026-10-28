@@ -135,7 +135,7 @@ COMPOSE_PROJECT_NAME=opsdeck-agent make docker-agent-up \
   COMPOSE_EXTRA=deploy/docker/compose.services.yaml
 ```
 
-Schedule the export once per minute using that deployment account's timer/cron and absolute checkout paths. The service reader rejects stale exports after about two minutes. This override also reads sanitized runner facts from host `data/`, so refresh the export after configuration changes.
+Schedule the export once per minute using that deployment account's timer/cron and absolute checkout paths. The service reader rejects stale exports after about two minutes. `--services` must list exactly the units in the workspace's `OPSDECK_SERVICES` (the template default also includes `tailscaled.service`); if one is missing from the export, the source reports `unavailable (ValueError)`. Change either list so they match. This override also reads sanitized runner facts from host `data/`, so refresh the export after configuration changes.
 
 For NVIDIA hosts, first verify native `nvidia-smi` and the approved NVIDIA Container Toolkit setup, then apply the documented GPU override to the workspace and the agent, preserving their existing overrides and separate project names. Absence of NVIDIA tools is not proof that the machine has no GPU. Hosts without that integration can leave GPU unmonitored.
 
