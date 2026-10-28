@@ -30,6 +30,24 @@ show_keys() {
   grep -nE '^\s*(concurrent|limit|request_concurrency)\s*=' "$CONFIG" || true
 }
 
+# admin.py needs tomllib (Python 3.11+). Hosts with an older python3 run it in
+# a throwaway Python 3.12 container that sees only the checkout and runner config.
+run_admin() {
+  local py root config_dir image=${OPSDECK_ADMIN_IMAGE:-python:3.12-slim-bookworm}
+  for py in python3 python3.13 python3.12 python3.11; do
+    if command -v "$py" >/dev/null && "$py" -c 'import tomllib' 2>/dev/null; then
+      "$py" "$SCRIPT_DIR/admin.py" "$@"
+      return
+    fi
+  done
+  root=$(cd -- "$SCRIPT_DIR/../.." && pwd)
+  config_dir=$(dirname -- "$CONFIG")
+  echo "Host python3 lacks tomllib; running admin.py in $image." >&2
+  docker run --rm --network none \
+    -v "$root:$root" -v "$config_dir:$config_dir" -w "$root" \
+    "$image" python "$SCRIPT_DIR/admin.py" "$@"
+}
+
 phase_status() {
   echo "== runner keys"; show_keys
   echo "== disks"; lsblk -o NAME,SIZE,ROTA,FSTYPE,LABEL,MOUNTPOINTS "$NVME_DOCKER" "$NVME_CACHE"
@@ -45,7 +63,7 @@ phase_concurrency() {
   [[ "$n" =~ ^[0-9]+$ && "$n" -ge 1 && "$n" -le 32 ]] || { echo "N must be 1..32" >&2; exit 2; }
   # Refuses ambiguous multiple registrations. Explicit per-runner limits are
   # preserved; use admin.py --runner NAME --limit N after reviewing them.
-  python3 "$SCRIPT_DIR/admin.py" --config "$CONFIG" --concurrent "$n" --apply
+  run_admin --config "$CONFIG" --concurrent "$n" --apply
   show_keys
   # gitlab-runner reloads config.toml on change; no restart, running jobs untouched.
   sleep 5
@@ -67,7 +85,7 @@ PY
 }
 
 phase_metrics() {
-  python3 "$SCRIPT_DIR/admin.py" --config "$CONFIG" --metrics-only --apply \
+  run_admin --config "$CONFIG" --metrics-only --apply \
     --facts "$SCRIPT_DIR/../../data/runner-facts.json"
   if metrics_ready; then
     echo 'Runner metrics are already available; refreshed sanitized configuration facts.'

@@ -104,6 +104,8 @@ sudo bash scripts/runner/tune-runner-host.sh metrics
 
 This phase does not change scheduling limits. A new listener can require draining active jobs before the runner restarts. The script preserves jobs with SIGQUIT, waits up to one hour, and does not force-stop them. Use a suitable maintenance window. Existing custom listener addresses require review rather than being overwritten.
 
+`admin.py` needs Python 3.11+ for `tomllib`. When the host's `python3` is older (for example Ubuntu 20.04), the script runs it in a throwaway `python:3.12-slim-bookworm` container with no network that mounts only the checkout and the runner configuration directory. Set `OPSDECK_ADMIN_IMAGE` to use another Python 3.11+ image. On such hosts, run the direct `admin.py` commands below the same way, or rerun the `metrics` phase, which refreshes the facts once metrics already work.
+
 Export facts independently when metrics already work or after capacity changes:
 
 ```bash

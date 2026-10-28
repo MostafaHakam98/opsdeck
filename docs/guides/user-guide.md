@@ -18,7 +18,7 @@ Colors carry one meaning on every page: green is healthy or passed, amber is sta
 
 The resource strip shows CPU use, memory use, the first GPU's utilization, and currently running CI containers identified on the host. **Capacity over time** supports hour, day, week, and month views. Charts show bucket averages; the history API also retains peak values.
 
-**Needs attention** summarizes active thresholds and unavailable telemetry. **Integration coverage** opens Connections. **Storage headroom** shows mounted filesystem capacity; **Export snapshot** downloads a JSON snapshot without server integration credentials.
+**Needs attention** summarizes active thresholds and unavailable telemetry. **Integration coverage** opens Connections, where each source has a **How to set this up** section with its setup steps and copyable host commands; it opens by default while that source is not healthy. **Storage headroom** shows mounted filesystem capacity; **Export snapshot** downloads a JSON snapshot without server integration credentials.
 
 **Where to start** directs support staff to critical conditions, memory/storage contention, connection checks, or the affected workload. It uses existing thresholds and collector freshness; a quiet dashboard does not establish health for an unavailable source.
 

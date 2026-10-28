@@ -2241,26 +2241,72 @@ td > button:not([class]):hover:not(:disabled) {
 .connection-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 16px;
   margin-bottom: 16px;
 }
 .connection-grid .panel {
   margin: 0;
 }
-.setup-guide {
+/* Per-source setup steps under each Connections panel. */
+.setup-help {
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.setup-help > summary {
+  cursor: pointer;
+  padding: 10px 20px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.setup-help > summary:hover {
+  background: var(--surface-2);
+}
+.setup-help[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.setup-help-body {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px 32px;
-  padding: 18px 20px 20px;
-}
-.setup-guide h3 {
-  font-size: 13px;
-  margin-bottom: 4px;
-}
-.setup-guide p {
-  font-size: 13px;
+  gap: 10px;
+  padding: 12px 20px 16px;
+  line-height: 1.6;
   color: var(--text-muted);
-  max-width: 650px;
+}
+.setup-help ol {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+}
+.setup-help li::marker {
+  color: var(--text-faint);
+}
+.setup-help-note {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.command {
+  position: relative;
+  margin-top: 6px;
+}
+.command pre {
+  margin: 0;
+  padding: 8px 40px 8px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.command .icon-button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 28px;
+  height: 28px;
 }
 .content footer {
   font-size: 12px;
@@ -3037,9 +3083,6 @@ body:has(.login.sign-in) {
   }
   h1 {
     font-size: 26px;
-  }
-  .setup-guide {
-    grid-template-columns: 1fr;
   }
   .benchmark {
     flex-direction: column;

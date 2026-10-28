@@ -82,6 +82,7 @@ import {
 import { WorkloadExplorer } from "../features/workloads/WorkloadExplorer";
 import { LiveCheckpoints } from "../features/workloads/LiveCheckpoints";
 import { GitLabSetup } from "../features/workloads/GitLabSetup";
+import { SetupHelp } from "../features/connections/SetupHelp";
 import { Badge, tone } from "../components/Status";
 import { ThemeToggle } from "../components/ThemeToggle";
 import {
@@ -838,6 +839,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               pipelines={pipelines}
               jobs={jobs}
               fresh={ciKnown && !sources.gitlab?.stale}
+              configured={sources.gitlab?.status !== "not_configured"}
             />
           )}
           {snapshot && page === "projects" && (
@@ -1774,6 +1776,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                 pipelines={pipelines}
                 jobs={jobs}
                 fresh={ciKnown && !sources.gitlab?.stale}
+                configured={sources.gitlab?.status !== "not_configured"}
               />
               <SourceNotice source={sources.docker} name="Docker" />
               <RunnerTelemetry
@@ -2146,49 +2149,23 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                           <dt>Sample age</dt>
                           <dd>{duration(s.age_seconds)}</dd>
                         </dl>
+                        <SetupHelp
+                          source={key}
+                          healthy={s.status === "healthy" && !s.stale}
+                        />
                       </Panel>
                     ))}
                   </div>
                 )}
               </PaginatedList>
-              <Panel title="Server configuration guide">
-                <div className="setup-guide">
-                  <article>
-                    <h3>GitLab</h3>
-                    <p>
-                      Set <code>GITLAB_URL</code>, <code>GITLAB_TOKEN</code>{" "}
-                      with read_api scope, and comma-separated{" "}
-                      <code>GITLAB_PROJECT_IDS</code>. Restart OpsDeck after
-                      updating its environment file.
-                    </p>
-                  </article>
-                  <article>
-                    <h3>Runner</h3>
-                    <p>
-                      Enable the runner's local metrics listener and set{" "}
-                      <code>RUNNER_METRICS_URL</code>. The administrator script
-                      exports safe runner facts without authentication tokens.
-                    </p>
-                  </article>
-                  <article>
-                    <h3>Docker & GPU</h3>
-                    <p>
-                      The service account needs Docker socket access. NVIDIA
-                      metrics use the host's <code>nvidia-smi</code>. Missing
-                      hardware or permissions appear as unavailable.
-                    </p>
-                  </article>
-                  <article>
-                    <h3>Actions & retention</h3>
-                    <p>
-                      Set <code>OPSDECK_ACTIONS=true</code> to permit
-                      managed-container actions. Label eligible containers{" "}
-                      <code>opsdeck.managed=true</code>. History retention:{" "}
-                      {snapshot?.retention_days ?? "n/a"} days. Audit action
-                      records are retained.
-                    </p>
-                  </article>
-                </div>
+              <Panel title="Actions & retention">
+                <p className="panel-description">
+                  Set <code>OPSDECK_ACTIONS=true</code> to permit
+                  managed-container actions. Label eligible containers{" "}
+                  <code>opsdeck.managed=true</code>. History retention:{" "}
+                  {snapshot?.retention_days ?? "n/a"} days. Audit action records
+                  are retained.
+                </p>
               </Panel>
               <div className="notice">
                 <ShieldCheck size={18} />

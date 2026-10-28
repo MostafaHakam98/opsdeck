@@ -489,7 +489,7 @@ def runner_collect(settings):
 
 def gitlab_collect(settings, history_page=1):
     if not settings.gitlab_url or not settings.gitlab_token or not settings.projects:
-        return source({"projects": [], "pipelines": [], "jobs": []}, "not_configured", "Set GITLAB_URL, GITLAB_TOKEN (read_api), and GITLAB_PROJECT_IDS on the server")
+        return source({"projects": [], "pipelines": [], "jobs": []}, "not_configured", "Not connected. Add a read-only GitLab connection under GitLab pipeline results on Connections")
     projects, pipelines, jobs, errors, history = [], [], [], [], []
     with httpx.Client(base_url=settings.gitlab_url + "/api/v4/", headers={"PRIVATE-TOKEN": settings.gitlab_token}, timeout=8, follow_redirects=False) as client:
         def get(path, params=None):
