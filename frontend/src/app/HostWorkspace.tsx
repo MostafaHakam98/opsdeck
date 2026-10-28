@@ -838,6 +838,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
               pipelines={pipelines}
               jobs={jobs}
               fresh={ciKnown && !sources.gitlab?.stale}
+              configured={sources.gitlab?.status !== "not_configured"}
             />
           )}
           {snapshot && page === "projects" && (
@@ -1774,6 +1775,7 @@ export function HostWorkspace({ fleet }: { fleet?: FleetNavigation }) {
                 pipelines={pipelines}
                 jobs={jobs}
                 fresh={ciKnown && !sources.gitlab?.stale}
+                configured={sources.gitlab?.status !== "not_configured"}
               />
               <SourceNotice source={sources.docker} name="Docker" />
               <RunnerTelemetry

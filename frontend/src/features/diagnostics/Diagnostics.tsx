@@ -365,10 +365,12 @@ export function PipelineDiagnostics({
   pipelines,
   jobs,
   fresh,
+  configured = true,
 }: {
   pipelines: Pipeline[];
   jobs: Job[];
   fresh: boolean;
+  configured?: boolean;
 }) {
   const outcomes = pipelineOutcomes(pipelines);
   const successful = pipelines.filter(
@@ -402,7 +404,14 @@ export function PipelineDiagnostics({
         </div>
         <Clock3 size={20} />
       </div>
-      {!fresh && (
+      {!configured && (
+        <p className="notice warn">
+          GitLab is not connected for this host, so no pipeline outcomes or
+          timings have been collected. Add a read-only GitLab connection under
+          Connections to assess workload health.
+        </p>
+      )}
+      {configured && !fresh && (
         <p className="notice warn">
           GitLab data is stale or unavailable. Results below describe the last
           collected sample. Connect or refresh GitLab to assess current workload

@@ -528,6 +528,21 @@ test("stale and absent telemetry cannot appear as current healthy diagnostic res
   await expect(
     page.getByText(/GitLab data is stale or unavailable/),
   ).toBeVisible();
+  snapshot.sources.gitlab = {
+    status: "not_configured",
+    stale: false,
+    data: null,
+    message: "Set GITLAB_URL",
+  };
+  await page
+    .getByRole("button", { name: "Refresh metrics", exact: true })
+    .click();
+  await expect(
+    page.getByText(/GitLab is not connected for this host/),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/GitLab data is stale or unavailable/),
+  ).toHaveCount(0);
 });
 
 test("alerts, recommendations, interfaces, sensors and cache lists keep every record reachable", async ({
