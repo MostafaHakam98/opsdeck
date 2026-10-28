@@ -100,15 +100,7 @@ export const setupGuides: Record<string, Guide> = {
           "docker cp data/runner-facts.json opsdeck-workspace-opsdeck-1:/data/runner-facts.json",
       },
     ],
-    note: (
-      <>
-        Refresh the facts after changing the runner configuration:{" "}
-        <code>
-          sudo python3 scripts/runner/admin.py --export-only --facts
-          ./data/runner-facts.json
-        </code>
-      </>
-    ),
+    note: "Run the same command again after changing the runner configuration; once metrics are on, it only refreshes the facts. Hosts with Python older than 3.11 run the helper in a Python 3.12 container automatically.",
   },
   gitlab: {
     intro:
