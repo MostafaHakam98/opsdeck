@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 from urllib.parse import urlsplit
+from urllib.parse import quote
 
 import httpx
 from fastapi import HTTPException
@@ -31,6 +32,31 @@ class GitLabConnection:
         value = self.read()
         return {"enabled": value.get("enabled", False), "url": value.get("url", ""), "token_configured": bool(value.get("token")),
             "projects": value.get("projects", []), "auto_observed": value.get("auto_observed", True), "project_limit": 32}
+
+    def retry_job(self, values, preview=False):
+        configured = self.settings_for_poll()
+        token = self.settings.gitlab_retry_token
+        project, job_id = values.get("project"), values.get("job")
+        if not token or not configured.gitlab_url:
+            raise HTTPException(403, "Job retry requires a separate OPSDECK_GITLAB_RETRY_TOKEN with api access on this host")
+        if not isinstance(project, str) or project not in configured.projects or type(job_id) is not int or job_id < 1:
+            raise HTTPException(400, "Choose a configured project and a positive job ID")
+        url = configured.gitlab_url + "/api/v4/projects/" + quote(project, safe="") + "/jobs/" + str(job_id)
+        try:
+            with httpx.Client(headers={"PRIVATE-TOKEN": token}, timeout=8, follow_redirects=False) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                job = response.json()
+                if job.get("status") != "failed":
+                    raise HTTPException(409, "Only a currently failed job can be retried; inspect the latest attempt")
+                if preview:
+                    return {k: job[k] for k in ("id", "name", "stage", "ref")}
+                response = client.post(url + "/retry")
+                response.raise_for_status()
+                retried = response.json()
+                return {"message": f"Retried GitLab job {job_id}; new job {retried['id']}", "job_id": retried["id"]}
+        except (httpx.HTTPError, ValueError, KeyError):
+            raise HTTPException(502, "GitLab refused the retry or did not reply. Inspect the latest job before trying again; the request is never replayed automatically") from None
 
     def settings_for_poll(self):
         value = self.read()

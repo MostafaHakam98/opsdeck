@@ -20,10 +20,13 @@ MAX_REPLY = 8 * 1024 * 1024
 MAX_JSON = 1024 * 1024
 GET_PATHS = re.compile(r"(?:snapshot|history|events|workloads|checkpoints(?:/(?:compare|[a-zA-Z0-9_-]+))?|integrations/gitlab|operations/(?:capabilities|jobs))\Z")
 POST_PATHS = re.compile(r"(?:actions/(?:preview|execute)|operations/(?:preview|execute|uploads(?:/[a-zA-Z0-9_-]+/discard)?)|checkpoints|integrations/gitlab(?:/history)?)\Z")
+TRANSFER_GET = re.compile(r"operations/(?:readiness|transfers/[a-f0-9]{32}/(?:chunk|status))\Z")
+TRANSFER_POST = re.compile(r"operations/transfers/[a-f0-9]{32}/(?:export|import|receive|discard)\Z")
 
 
 def allowed(method, path):
-    return bool((GET_PATHS if method == "GET" else POST_PATHS if method == "POST" else re.compile(r"(?!)")).fullmatch(path))
+    return bool((method == "GET" and (GET_PATHS.fullmatch(path) or TRANSFER_GET.fullmatch(path))) or
+                (method == "POST" and (POST_PATHS.fullmatch(path) or TRANSFER_POST.fullmatch(path))))
 
 
 @dataclass
@@ -57,6 +60,26 @@ class WorkspaceRelay:
             if value.node == node and not value.future.done():
                 value.future.set_exception(HTTPException(409, "Host credential changed; inspect host activity before retrying"))
 
+    async def call(self, node, method, path, values=None):
+        """Internal coordinator requests use exactly the same host allowlist/auth relay."""
+        from urllib.parse import urlsplit
+        parsed = urlsplit(path)
+        payload = b"" if values is None else json.dumps(values).encode()
+        sent = False
+        async def receive():
+            nonlocal sent
+            if sent:
+                return {"type": "http.disconnect"}
+            sent = True
+            return {"type": "http.request", "body": payload, "more_body": False}
+        request = Request({"type": "http", "method": method, "path": "/api/" + parsed.path,
+                           "query_string": parsed.query.encode(), "headers": [], "scheme": "http", "server": ("internal", 80)}, receive)
+        response = await self.forward(node, parsed.path, request)
+        result = json.loads(response.body)
+        if response.status_code >= 400:
+            raise HTTPException(response.status_code, result.get("detail", "Host operation failed"))
+        return result
+
     async def forward(self, node, path, request: Request):
         if not allowed(request.method, path):
             raise HTTPException(404, "Unknown host workspace API route")
@@ -67,7 +90,7 @@ class WorkspaceRelay:
         if len(self.pending) >= 32 or sum(v.node == node for v in self.pending.values()) >= 8:
             raise HTTPException(429, "Host workspace is busy; wait for existing requests")
         upload = path == "operations/uploads"
-        limit = self.upload_limit if upload else MAX_JSON
+        limit = self.upload_limit if upload else MAX_REPLY if TRANSFER_POST.fullmatch(path) else MAX_JSON
         # At most one archive transfer globally. JSON requests retain separate capacity.
         if upload and any(v.path == path for v in self.pending.values()):
             raise HTTPException(409, "Another archive transfer is active; wait for it to finish")

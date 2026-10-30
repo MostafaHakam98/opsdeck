@@ -8,7 +8,7 @@ import tomllib
 
 import pytest
 
-from scripts.runner.admin import capacity_config
+from scripts.runner.admin import capacity_config, image_policy_config
 from scripts.runner.control import Conflict, Handler, RunnerControl
 from backend.operations import RunnerClient
 CONFIG = '''concurrent = 4
@@ -83,3 +83,24 @@ def test_capacity_helper_lock_revision_backup_and_real_socket(tmp_path):
         finally:
             server.shutdown()
             thread.join()
+
+
+def test_image_policy_only_changes_reviewed_registration_and_preserves_secrets(tmp_path):
+    text = CONFIG.replace('name = "heavy"', 'name = "heavy"\nexecutor = "docker"')
+    expected = tomllib.loads(text)
+    expected["runners"][0]["docker"]["pull_policy"] = "if-not-present"
+    assert tomllib.loads(image_policy_config(text, "heavy", "if-not-present")) == expected
+    for name, policy in [("light", "if-not-present"), ("heavy", "never"), ("missing", "always")]:
+        with pytest.raises(ValueError): image_policy_config(text, name, policy)
+    restricted = text.replace('[runners.docker]', '[runners.docker]\nallowed_pull_policies = ["always"]')
+    with pytest.raises(ValueError): image_policy_config(restricted, "heavy", "if-not-present")
+    path = tmp_path/"config.toml"
+    path.write_text(text)
+    control = RunnerControl(path, tmp_path/"facts", tmp_path/"lock")
+    state = control.handle({"operation":"state"})
+    request = {"operation":"preview","revision":state["revision"],"runner":"heavy","pull_policy":"if-not-present"}
+    assert control.handle(request)["after"]["runners"][0]["pull_policy"] == "if-not-present"
+    control.handle({**request,"operation":"apply"})
+    assert tomllib.loads(path.read_text()) == expected
+    assert len(list(tmp_path.glob("config.toml.bak-*"))) == 1
+    with pytest.raises(Conflict): control.handle({**request,"operation":"apply"})

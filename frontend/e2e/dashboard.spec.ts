@@ -1008,6 +1008,10 @@ test("fleet retains the complete host sidebar and scopes every original page to 
       });
     if (url.pathname === "/api/fleet/history")
       return route.fulfill({ json: [] });
+    if (url.pathname === "/api/fleet/image-transfers") {
+      expect(nodes.some(node => node.id === url.searchParams.get("destination"))).toBe(true);
+      return route.fulfill({json: []});
+    }
     const node = nodes.find((node) =>
       url.pathname.startsWith(`/api/fleet/nodes/${node.id}`),
     );

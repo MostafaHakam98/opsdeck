@@ -36,6 +36,43 @@ The installer copies the helper into root-owned `/opt/opsdeck-runner-control`, i
 
 Capacity changes use the runner's automatic configuration reload; they do not restart the service. Lowering capacity allows current jobs to finish before additional jobs are accepted. See [GitLab's configuration documentation](https://docs.gitlab.com/runner/configuration/advanced-configuration/).
 
+## Prepare an image for a failed job
+
+In the selected host's **Operations** page, enter the job's exact image tag including its version (for an unqualified job image such as `team-toolchain`, use `team-toolchain:latest`). **Check runner readiness** reports whether this tag exists in the workspace's Docker engine, CPU architectures, archive staging space, Docker disk free space when accessible, and runner image policies. An engine running in a VM may not report its disk's free space; archive staging space is separate and does not prove that the VM has room.
+
+If the tag is missing, import a saved image, build from a Dockerfile/context, or select **Copy from another host** in fleet mode. Choose a source host and its inventory tag, review both staging budgets and architectures, then confirm the exact copy. Operations must be enabled on both hosts; both workspaces and agents must run this release. Different architectures require explicit confirmation that the destination supports emulation; copying does not install an emulator.
+
+The background copy has separate export, copy, import, and verification stages. The source saves an archive of the reviewed image and checks its config against that image before making it available. Agents relay checksummed 4 MiB chunks through the fleet server; the central server never stages a whole image. The destination retains its byte offset and accepts identical repeated chunks without appending duplicates. Connectivity loss and central restarts resume the byte copy. Closing the browser does not stop it.
+
+```mermaid
+flowchart LR
+    S[Source Docker engine] --> E[Source export worker and archive]
+    E --> A[Outbound source agent]
+    A --> C[Central coordinator and durable progress]
+    C --> B[Outbound destination agent]
+    B --> D[Destination staged archive]
+    D --> I[Serialized Docker import]
+    I --> V[Layer and runtime verification]
+```
+
+Before importing, the destination verifies the archive SHA-256 and refuses existing tags. It uses the same serialized image-operation worker as builds and browser uploads, so this workflow does not start overlapping imports. Verification compares all layer hashes and normalized runtime configuration, rather than assuming different Docker storage backends expose identical image IDs. Successful transfers remove their source export and destination upload. Failed/unknown results retain artifacts for inspection; **Discard staged archives** removes only these artifacts, preserving Docker images. An unavailable source can retain a successful transfer's export until explicit cleanup.
+
+Host restarts during an export/import leave that mutation **unknown**, without automatically replaying it. Inspect the host's live images and operation history before starting a new copy. A disconnect during a chunk transfer is resumable; an unknown Docker mutation is not treated as safely repeatable. Transfer records live alongside the central SQLite database in `<OPSDECK_DB>.image-transfers`; include that database in backups.
+
+When a locally built image exists but jobs still try Docker Hub, review the selected Docker registration's **Image pull policy**. **Use local image when present** sets `if-not-present`; **Always pull from registry** sets `always`. The helper validates the reviewed configuration revision, creates a private backup, changes only that registration's policy, and lets GitLab Runner reload without restarting jobs. Existing `allowed_pull_policies` restrictions are respected. Reusing cached private images is appropriate only for projects trusted to share that runner.
+
+On macOS, install the helper as the user who owns GitLab Runner, using the workspace virtualenv:
+
+```bash
+.venv/bin/python deploy/native/install-runner-control-macos.py
+```
+
+Set the printed `OPSDECK_RUNNER_CONTROL_SOCKET` in the private workspace environment, set `OPSDECK_OPERATIONS=true`, and restart only OpsDeck. The helper uses a user LaunchAgent and local Unix socket. Linux retains the systemd helper installation described above; rerun its installer when upgrading helper code.
+
+### Retry the failed job
+
+Optional **Retry a failed GitLab job** uses a separate private `OPSDECK_GITLAB_RETRY_TOKEN` with `api` access on the host. Keep the existing monitoring token read-only. The project must be configured in the host's GitLab connection (or observed with auto-project discovery), and the job must currently be failed. Review shows its name, stage, and ref before typed confirmation. Retrying can execute any script in that job; it is always a separate action after image verification. A timed-out retry is never automatically replayed: inspect GitLab for a newer attempt.
+
 ## Load an image from a computer or USB drive
 
 On the source machine, save an image:
@@ -107,6 +144,7 @@ Image operations run in the background, one at a time, with up to four waiting t
 | `OPSDECK_RUNNER_CONTROL_SOCKET` | empty, helper disconnected |
 | `OPSDECK_IMAGE_UPLOAD_DIR` | `./data/image-uploads` native; `/data/image-uploads` Compose |
 | `OPSDECK_IMAGE_UPLOAD_MAX_GIB` | `32`, range 1–128; aggregate staging allowance |
+| `OPSDECK_IMAGE_OPERATION_TIMEOUT` | `7200` seconds, range 60–21600; Docker worker read timeout for large exports/imports/builds |
 | `OPSDECK_BUILD_CONTEXTS_FILE` | empty, optional node profiles |
 
 Staging enforces its aggregate size allowance and keeps at least 2 GiB free. Image layers and build outputs consume additional space in the Docker data root. Existing Docker images are never pruned by these actions. The last 50 task results are returned to the UI; up to 200 completed records are retained in SQLite, with durable action audit events retained separately.

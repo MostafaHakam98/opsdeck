@@ -2,6 +2,248 @@ import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 const operator = "fleet-browser-test-token-at-least-32-characters";
+test("image copy review, policy repair and durable transfer history work in a host workspace", async ({
+  page,
+  request,
+}) => {
+  const headers = { Authorization: `Bearer ${operator}` };
+  const suffix = randomUUID().slice(0, 8);
+  const source = await (
+    await request.post("/api/fleet/nodes", {
+      headers,
+      data: { name: `image-source-${suffix}`, cluster: "Image tests" },
+    })
+  ).json();
+  const target = await (
+    await request.post("/api/fleet/nodes", {
+      headers,
+      data: { name: `image-target-${suffix}`, cluster: "Image tests" },
+    })
+  ).json();
+  const facts = {
+    concurrent: 1,
+    runners: [
+      {
+        name: "mac-runner",
+        executor: "docker",
+        limit: 0,
+        request_concurrency: 1,
+        pull_policy: "always",
+      },
+    ],
+  };
+  const snapshot = {
+    version: "test",
+    sources: {
+      host: {
+        status: "healthy",
+        data: {
+          hostname: target.name,
+          cpu: { percent: 1 },
+          memory: { percent: 1 },
+          scope: "native",
+        },
+      },
+      docker: {
+        status: "healthy",
+        data: { images: [], containers: [], storage: {} },
+      },
+    },
+    alerts: [],
+    recommendations: [],
+    server_time: Date.now() / 1000,
+    sample_seconds: 10,
+    retention_days: 30,
+    actions_enabled: false,
+    history_error: null,
+  };
+  let transfers: any[] = [];
+  const ready = {
+    reference: "toolchain:v1",
+    present: false,
+    architecture: "amd64",
+    engine_architecture: "aarch64",
+    staging_free: 20 * 1024 ** 3,
+    engine_disk_free: null,
+    runner: { available: true, revision: "policy-rev", facts },
+  };
+  await page.route(`**/api/fleet/nodes/${target.id}`, (route) =>
+    route.fulfill({
+      json: {
+        node: { ...target, status: "online" },
+        sources: {},
+        workspace_connected: true,
+      },
+    }),
+  );
+  await page.route(
+    `**/api/fleet/nodes/${source.id}/workspace/snapshot`,
+    (route) =>
+      route.fulfill({
+        json: {
+          sources: {
+            docker: { data: { images: [{ tags: ["toolchain:v1"] }] } },
+          },
+        },
+      }),
+  );
+  await page.route(`**/api/fleet/nodes/${target.id}/workspace/**`, (route) => {
+    const path = new URL(route.request().url()).pathname.split(
+      "/workspace/",
+    )[1];
+    if (path === "snapshot") return route.fulfill({ json: snapshot });
+    if (path === "operations/capabilities")
+      return route.fulfill({
+        json: {
+          enabled: true,
+          upload_max_bytes: 32 * 1024 ** 3,
+          runner: ready.runner,
+          build_profiles: [],
+          uploads: [],
+        },
+      });
+    if (path === "operations/readiness") return route.fulfill({ json: ready });
+    if (path === "operations/preview") {
+      expect(route.request().postDataJSON()).toEqual({
+        action: "runner_image_policy",
+        values: {
+          runner: "mac-runner",
+          pull_policy: "if-not-present",
+          revision: "policy-rev",
+        },
+      });
+      return route.fulfill({
+        json: {
+          action: "runner_image_policy",
+          nonce: "policy-review",
+          name: "Runner image policy",
+          confirmation: "set image policy mac-runner if-not-present",
+          expires_at: Date.now() / 1000 + 60,
+          impact: "Backs up and changes image policy",
+          before: facts,
+          after: {
+            ...facts,
+            runners: [{ ...facts.runners[0], pull_policy: "if-not-present" }],
+          },
+          values: {},
+        },
+      });
+    }
+    if (path === "operations/execute") {
+      expect(route.request().postDataJSON().confirmation).toBe(
+        "set image policy mac-runner if-not-present",
+      );
+      return route.fulfill({ json: { message: "Image policy saved" } });
+    }
+    if (path === "workloads")
+      return route.fulfill({
+        json: {
+          scope: {},
+          catalog: { projects: [], pipelines: [], images: [] },
+          rows: [],
+          worker_metadata: {},
+          summary: {},
+        },
+      });
+    return route.fulfill({ json: [] });
+  });
+  await page.route("**/api/fleet/image-transfers?**", (route) =>
+    route.fulfill({ json: transfers }),
+  );
+  await page.route("**/api/fleet/image-transfers/preview", (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      source: source.id,
+      destination: target.id,
+      reference: "toolchain:v1",
+      allow_emulation: true,
+    });
+    return route.fulfill({
+      json: {
+        nonce: "copy-review",
+        expires_at: Date.now() / 1000 + 60,
+        confirmation: "copy toolchain:v1",
+        source_name: source.name,
+        destination_name: target.name,
+        reference: "toolchain:v1",
+        estimated_bytes: 8192,
+        architecture: "amd64",
+        source_info: ready,
+        destination_info: ready,
+      },
+    });
+  });
+  await page.route("**/api/fleet/image-transfers/execute", (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      nonce: "copy-review",
+      confirmation: "copy toolchain:v1",
+    });
+    transfers = [
+      {
+        id: "a".repeat(32),
+        source: source.id,
+        destination: target.id,
+        source_name: source.name,
+        destination_name: target.name,
+        reference: "toolchain:v1",
+        status: "running",
+        stage: "copying",
+        message: "Copying archive to destination",
+        offset: 4096,
+        total: 8192,
+      },
+    ];
+    return route.fulfill({ json: transfers[0] });
+  });
+  await page.addInitScript(
+    (value) => sessionStorage.setItem("opsdeck.token", value),
+    operator,
+  );
+  await page.goto(`/?node=${target.id}&section=operations`);
+  await page.getByLabel("Required image tag").fill("toolchain:v1");
+  await page.getByRole("button", { name: "Check runner readiness" }).click();
+  await expect(
+    page.getByText("Image is missing from this Docker engine"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Review image policy" }).click();
+  await page
+    .getByLabel("Operation confirmation")
+    .fill("set image policy mac-runner if-not-present");
+  await page.getByRole("button", { name: "Apply reviewed operation" }).click();
+  await expect(
+    page.getByText("Image policy saved", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Source image host").selectOption(source.id);
+  await page
+    .getByLabel("Allow a different CPU architecture", { exact: false })
+    .check();
+  await page.getByRole("button", { name: "Review image copy" }).click();
+  await expect(
+    page.getByRole("button", { name: "Start image copy" }),
+  ).toBeDisabled();
+  await page.getByLabel("Image copy confirmation").fill("copy toolchain:v1");
+  await page.getByRole("button", { name: "Start image copy" }).click();
+  await expect(page.getByLabel("Image transfer history")).toContainText(
+    "Copy archive · running",
+  );
+  await page.reload();
+  await expect(page.getByLabel("Image transfer history")).toContainText(
+    "Copy archive · running",
+  );
+  await page.screenshot({
+    path: "../.tmp/opsdeck-image-repair-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "../.tmp/opsdeck-image-repair-mobile.png",
+    fullPage: true,
+  });
+});
 test("header switches across clusters, restores host URLs, and returns to all hosts", async ({
   page,
   request,

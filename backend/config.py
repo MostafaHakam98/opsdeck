@@ -31,9 +31,11 @@ class Settings:
     runner_control_socket: str = field(default_factory=lambda: os.getenv("OPSDECK_RUNNER_CONTROL_SOCKET", ""))
     image_upload_dir: str = field(default_factory=lambda: os.getenv("OPSDECK_IMAGE_UPLOAD_DIR", "./data/image-uploads"))
     image_upload_max_gib: int = field(default_factory=lambda: int(os.getenv("OPSDECK_IMAGE_UPLOAD_MAX_GIB", "32")))
+    image_operation_timeout: int = field(default_factory=lambda: int(os.getenv("OPSDECK_IMAGE_OPERATION_TIMEOUT", "7200")))
     build_contexts_file: str = field(default_factory=lambda: os.getenv("OPSDECK_BUILD_CONTEXTS_FILE", ""))
     gitlab_url: str = field(default_factory=lambda: os.getenv("GITLAB_URL", "").rstrip("/"))
     gitlab_token: str = field(default_factory=lambda: os.getenv("GITLAB_TOKEN", ""))
+    gitlab_retry_token: str = field(default_factory=lambda: os.getenv("OPSDECK_GITLAB_RETRY_TOKEN", ""))
     gitlab_connection_file: str = field(default_factory=lambda: os.getenv("OPSDECK_GITLAB_CONNECTION_FILE", "./data/gitlab-connection.json"))
     projects: list[str] = field(default_factory=lambda: [p.strip() for p in os.getenv("GITLAB_PROJECT_IDS", "").split(",") if p.strip()][:32])
     runner_url: str = field(default_factory=lambda: os.getenv("RUNNER_METRICS_URL", "http://127.0.0.1:9252/metrics"))
@@ -72,5 +74,7 @@ class Settings:
             raise ValueError("GITLAB_URL must use HTTPS when a token is configured")
         if not 1 <= self.image_upload_max_gib <= 128:
             raise ValueError("OPSDECK_IMAGE_UPLOAD_MAX_GIB must be 1..128")
+        if not 60 <= self.image_operation_timeout <= 21600:
+            raise ValueError("OPSDECK_IMAGE_OPERATION_TIMEOUT must be 60..21600 seconds")
         if self.mode == "standalone" and self.host_root and (not Path(self.host_root).is_absolute() or not Path(self.procfs_path, "meminfo").is_file()):
             raise ValueError("Host monitoring requires an absolute host root and a readable host procfs mount")

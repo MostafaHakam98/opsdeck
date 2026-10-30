@@ -11,9 +11,9 @@ import tempfile
 import tomllib
 
 try:
-    from .admin import capacity_config, safe_facts, write_config
+    from .admin import capacity_config, image_policy_config, safe_facts, write_config
 except ImportError:
-    from admin import capacity_config, safe_facts, write_config
+    from admin import capacity_config, image_policy_config, safe_facts, write_config
 
 
 class Conflict(ValueError):
@@ -45,7 +45,7 @@ class RunnerControl:
             Path(name).unlink(missing_ok=True)
 
     def handle(self, request):
-        if not isinstance(request, dict) or set(request) - {"operation", "revision", "concurrent", "runner", "limit", "requests"}:
+        if not isinstance(request, dict) or set(request) - {"operation", "revision", "concurrent", "runner", "limit", "requests", "pull_policy"}:
             raise ValueError("Unsupported control request")
         operation = request.get("operation")
         if operation not in ("state", "preview", "apply"):
@@ -59,7 +59,12 @@ class RunnerControl:
                 return {"revision": revision, "facts": before}
             if request.get("revision") != revision:
                 raise Conflict("Runner configuration changed; create a fresh preview")
-            candidate = capacity_config(text, request.get("concurrent"), request.get("runner"), request.get("limit"), request.get("requests"))
+            if "pull_policy" in request:
+                if set(request) - {"operation", "revision", "runner", "pull_policy"}:
+                    raise ValueError("Review image policy separately from capacity")
+                candidate = image_policy_config(text, request.get("runner"), request["pull_policy"])
+            else:
+                candidate = capacity_config(text, request.get("concurrent"), request.get("runner"), request.get("limit"), request.get("requests"))
             after = safe_facts(tomllib.loads(candidate))
             if operation == "preview":
                 return {"revision": revision, "before": before, "after": after}
@@ -90,11 +95,12 @@ def main():
     parser.add_argument("--config", default="/etc/gitlab-runner/config.toml")
     parser.add_argument("--facts", required=True)
     parser.add_argument("--socket", default="/run/opsdeck-control/runner.sock")
+    parser.add_argument("--lock", default="/run/opsdeck-tune.lock")
     args = parser.parse_args()
     path = Path(args.socket)
     path.unlink(missing_ok=True)
     with socketserver.UnixStreamServer(str(path), Handler) as server:
-        server.control = RunnerControl(args.config, args.facts)
+        server.control = RunnerControl(args.config, args.facts, args.lock)
         path.chmod(0o660)
         server.serve_forever()
 

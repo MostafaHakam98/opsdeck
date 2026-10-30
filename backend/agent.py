@@ -1,7 +1,7 @@
 """Host telemetry agent: no listening socket, outbound HTTPS, bounded durable retry queue."""
 import argparse
 import asyncio
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 import fcntl
 import json
@@ -55,8 +55,12 @@ class Spool:
         with self.connect() as db:
             db.execute("CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY AUTOINCREMENT, payload BLOB NOT NULL)")
 
+    @contextmanager
     def connect(self):
-        return sqlite3.connect(self.settings.spool, timeout=10)
+        # Close each queue connection independently of garbage collection.
+        with closing(sqlite3.connect(self.settings.spool, timeout=10)) as db:
+            with db:
+                yield db
 
     def push(self, payload):
         encoded = json.dumps(payload, allow_nan=False, separators=(",", ":")).encode()
