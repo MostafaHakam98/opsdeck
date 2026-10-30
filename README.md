@@ -33,9 +33,10 @@ For NVIDIA telemetry, configure the node's NVIDIA Container Toolkit and run `mak
 - Runner telemetry and optional read-only GitLab pipeline/job integration.
 - Global and repository/pipeline/image scopes, paginated workload tables, and observed image usage by project.
 - Named live survey checkpoints with scoped comparisons, source freshness, and JSON export.
+- Operations for image readiness, host-to-host copying, archive import/build, and reviewed runner image-policy repair.
 - Retained charts, integration freshness, threshold alerts, optimization evidence, and action history.
 
-Missing integrations stay explicit. The dashboard labels its collection scope. GitLab is read-only; container stop/restart actions are disabled by default and require an opt-in label, typed confirmation, current-state validation, and a one-use preview.
+Missing integrations stay explicit. The dashboard labels its collection scope. GitLab monitoring is read-only; optional reviewed job retry uses a separate API credential. Container stop/restart actions are disabled by default and require an opt-in label, typed confirmation, current-state validation, and a one-use preview.
 
 ## Common commands
 

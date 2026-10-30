@@ -12,6 +12,7 @@ import docker
 from fastapi.testclient import TestClient
 from backend.config import Settings
 from backend.main import create_app
+from backend.image_artifacts import runtime_digest
 
 def main():
     engine=docker.from_env(timeout=60)
@@ -36,10 +37,12 @@ def main():
                     response=client.post('/api/operations/preview',headers=headers,json={'action':action,'values':values}); assert response.status_code==200,response.text
                     plan=response.json()
                     response=client.post('/api/operations/execute',headers=headers,json={'nonce':plan['nonce'],'confirmation':plan['confirmation']}); assert response.status_code==200,response.text
-                    identifier=response.json()['id'];deadline=time.monotonic()+90
+                    return wait(response.json()['id'])
+                def wait(identifier):
+                    deadline=time.monotonic()+90
                     while time.monotonic()<deadline:
                         job=next(job for job in client.get('/api/operations/jobs',headers=headers).json() if job['id']==identifier)
-                        if job['status'] not in ('queued','running'): assert job['status']=='success',job;return
+                        if job['status'] not in ('queued','running'): assert job['status']=='success',job;return job
                         time.sleep(.2)
                     raise AssertionError('Image operation timed out')
                 identifier=stage('context',context.getvalue())
@@ -50,9 +53,35 @@ def main():
                 engine.images.remove(aliased)
                 identifier=stage('image',archive)
                 operate('load_image',{'upload_id':identifier})
-                assert engine.images.get(aliased).id==image.id
+                assert engine.images.get(aliased).attrs['RootFS']==image.attrs['RootFS']
                 assert app.state.store.operations()[0]['status']=='success'
-                sys.stdout.write('Real Docker operation round trip passed: authenticated context upload, build, pinned-ID tag, docker-save upload/load, import verification, and persistent task results.\n')
+                export_id=secrets.token_hex(16)
+                source_image=engine.images.get(aliased)
+                response=client.post(f'/api/operations/transfers/{export_id}/export',headers=headers,json={'reference':aliased,'source_id':source_image.id,'confirmation':'export '+aliased})
+                assert response.status_code==200,response.text
+                exported=wait(export_id)['artifact']
+                engine.images.remove(aliased)
+                target_id=secrets.token_hex(16)
+                route=f'/api/operations/transfers/{target_id}/receive'
+                response=client.post(route,headers=headers,json={'step':'begin','bytes':exported['bytes'],'sha256':exported['sha256'],'reference':aliased,'confirmation':'receive '+aliased})
+                assert response.status_code==200,response.text
+                offset=0
+                while offset<exported['bytes']:
+                    chunk=client.get(f'/api/operations/transfers/{export_id}/chunk?offset={offset}',headers=headers)
+                    assert chunk.status_code==200,chunk.text
+                    response=client.post(route,headers=headers,json={'step':'chunk',**chunk.json()})
+                    assert response.status_code==200,response.text
+                    offset=response.json()['offset']
+                response=client.post(route,headers=headers,json={'step':'finish'})
+                assert response.status_code==200,response.text
+                response=client.post(f'/api/operations/transfers/{target_id}/import',headers=headers,json={'reference':aliased,'confirmation':'load transferred image '+aliased})
+                assert response.status_code==200,response.text
+                wait(target_id)
+                imported=engine.images.get(aliased)
+                assert imported.attrs['RootFS']==source_image.attrs['RootFS']
+                assert runtime_digest(imported.attrs)==runtime_digest(source_image.attrs)
+                assert client.post(f'/api/operations/transfers/{export_id}/discard',headers=headers,json={}).status_code==200
+                sys.stdout.write('Real Docker round trip passed: context build, pinned tag, save/load, checksummed export/chunk/import, image fingerprint verification, and persistent task results.\n')
         finally:
             for tag in (aliased,reference):
                 try: engine.images.remove(tag)

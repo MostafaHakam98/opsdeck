@@ -1,4 +1,5 @@
 """Bounded metric history and a durable audit trail, using one SQLite connection per operation."""
+from contextlib import closing, contextmanager
 import json
 import sqlite3
 import time
@@ -19,8 +20,12 @@ class Store:
             db.execute("CREATE TABLE IF NOT EXISTS pipeline_jobs (id TEXT PRIMARY KEY, updated_at REAL, payload TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS checkpoints (id TEXT PRIMARY KEY, created_at REAL, payload TEXT)")
 
+    @contextmanager
     def connect(self):
-        return sqlite3.connect(self.path, timeout=10)
+        # SQLite's transaction context commits/rolls back but does not close.
+        with closing(sqlite3.connect(self.path, timeout=10)) as db:
+            with db:
+                yield db
 
     def sample(self, payload: dict, retention: int):
         now = time.time()
@@ -90,10 +95,17 @@ class Store:
             else:
                 db.execute("UPDATE operations SET updated_at=?,status=?,payload=? WHERE id=?", (now, status, json.dumps(payload), identifier))
 
-    def operations(self, limit=50):
+    def operations(self, limit=50, destination=None):
         with self.connect() as db:
+            where = " WHERE json_extract(payload,'$.destination')=?" if destination is not None else ""
+            parameters = (destination, limit) if destination is not None else (limit,)
             return [{"id": row[0], "created_at": row[1], "updated_at": row[2], "status": row[3], **json.loads(row[4])}
-                for row in db.execute("SELECT * FROM operations ORDER BY created_at DESC LIMIT ?", (limit,))]
+                for row in db.execute("SELECT * FROM operations" + where + " ORDER BY CASE WHEN status IN ('queued','running') THEN 0 ELSE 1 END, created_at DESC LIMIT ?", parameters)]
+
+    def operation_by_id(self, identifier):
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM operations WHERE id=?", (identifier,)).fetchone()
+            return None if row is None else {"id": row[0], "created_at": row[1], "updated_at": row[2], "status": row[3], **json.loads(row[4])}
 
     def recover_operations(self):
         with self.connect() as db:

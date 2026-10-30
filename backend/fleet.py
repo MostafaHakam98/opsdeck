@@ -19,6 +19,7 @@ from backend.store import Store
 from backend.web import HashedAssets, SelectiveGZip
 from backend.workspace import WorkspaceRelay
 from backend.auth import AdminAuth
+from backend.image_transfers import ImageTransfers
 
 MAX_TELEMETRY_BYTES = 2 * 1024 * 1024
 SOURCE_NAMES = ("host", "docker", "gpu", "runner", "services")
@@ -36,6 +37,19 @@ class NodeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=120)
     cluster: str = Field(min_length=1, max_length=120)
+
+
+class ImageCopyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: UUID
+    destination: UUID
+    reference: str = Field(min_length=1, max_length=255)
+    allow_emulation: bool = False
+
+
+class ImageCopyExecute(BaseModel):
+    nonce: str = Field(max_length=128)
+    confirmation: str = Field(max_length=300)
 
 
 class NodeSettingsRequest(BaseModel):
@@ -410,6 +424,7 @@ def create_fleet_app(settings):
     admin = AdminAuth(settings.admin_file, settings.db, settings.token)
     attempts = {}
     relay = WorkspaceRelay(str(settings.db) + ".workspace", settings.image_upload_max_gib * 1024 ** 3)
+    transfers = ImageTransfers(settings, fleet, relay)
 
     async def maintain():
         while True:
@@ -419,15 +434,18 @@ def create_fleet_app(settings):
     @asynccontextmanager
     async def lifespan(app):
         task = asyncio.create_task(maintain())
+        image_task = asyncio.create_task(transfers.work())
         yield
         task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        image_task.cancel()
+        await asyncio.gather(task, image_task, return_exceptions=True)
 
     app = FastAPI(title="OpsDeck Fleet", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SelectiveGZip)
     app.state.fleet = fleet
     app.state.version = settings.version
     app.state.workspace = relay
+    app.state.image_transfers = transfers
     admin.routes(app)
 
     def bearer(authorization):
@@ -474,6 +492,22 @@ def create_fleet_app(settings):
         alerts = fleet_alerts(nodes, now)
         return {"mode": "central", "nodes": nodes, "summary": fleet_summary(nodes, alerts), "alerts": alerts, "server_time": now,
                 "sample_seconds": settings.interval, "retention_days": settings.retention, "actions_enabled": False, "version": settings.version}
+
+    @app.get("/api/fleet/image-transfers", dependencies=[Depends(authenticate)])
+    def image_transfers(destination: UUID | None = None):
+        return transfers.store.operations(destination=None if destination is None else str(destination))
+
+    @app.post("/api/fleet/image-transfers/preview", dependencies=[Depends(authenticate)])
+    async def image_transfer_preview(body: ImageCopyRequest):
+        return await transfers.preview(str(body.source), str(body.destination), body.reference, body.allow_emulation)
+
+    @app.post("/api/fleet/image-transfers/execute", dependencies=[Depends(authenticate)])
+    def image_transfer_execute(body: ImageCopyExecute):
+        return transfers.execute(body.nonce, body.confirmation)
+
+    @app.post("/api/fleet/image-transfers/{identifier}/discard", dependencies=[Depends(authenticate)])
+    async def image_transfer_discard(identifier: str):
+        return await transfers.discard(identifier)
 
     @app.get("/api/fleet/pulse", dependencies=[Depends(authenticate)])
     def pulse(minutes: int = Query(default=60, ge=5, le=1440), buckets: int = Query(default=60, ge=10, le=120)):

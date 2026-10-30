@@ -14,6 +14,7 @@ import time
 
 import docker
 from fastapi import HTTPException
+from backend.image_artifacts import ImageArtifacts, identifier, runtime_digest
 
 
 class RunnerClient:
@@ -62,13 +63,15 @@ class Operations:
     def __init__(self, settings, store, client_factory=None, runner=None):
         self.settings, self.store = settings, store
         self.client_factory = client_factory or (lambda: docker.from_env(timeout=8))
-        self.worker_factory = client_factory or (lambda: docker.from_env(timeout=900))
+        self.worker_factory = client_factory or (lambda: docker.from_env(timeout=settings.image_operation_timeout))
         self.runner = runner or RunnerClient(settings.runner_control_socket)
         self.pending, self.lock = {}, threading.Lock()
         self.tasks = queue.Queue(maxsize=4)
         self.upload_lock = threading.Lock()
         self.thread = None
         self.stopping = threading.Event()
+        self.artifacts = ImageArtifacts(self)
+        self.gitlab = None
 
     def require_enabled(self):
         if not self.settings.operations:
@@ -110,7 +113,8 @@ class Operations:
             raise HTTPException(503, "Build context configuration is invalid or unavailable") from None
 
     def capabilities(self):
-        response = {"enabled": self.settings.operations, "image_actions": ["load_image", "build_image", "tag_image"],
+        response = {"enabled": self.settings.operations, "image_actions": ["load_image", "build_image", "tag_image", "export_image"],
+            "gitlab_retry_enabled": bool(self.settings.gitlab_retry_token),
             "upload_max_bytes": self.settings.image_upload_max_gib * 1024**3, "runner": {"available": False, "message": "Install the runner capacity helper to change limits"}, "build_profiles": [], "uploads": []}
         if not self.settings.operations:
             return response
@@ -160,10 +164,17 @@ class Operations:
             limit = self.settings.image_upload_max_gib * 1024**3
             # Bound aggregate staging as well as each upload; completed unused uploads expire after 24h.
             now = time.time()
+            protected = {job.get("upload_id") for job in self.store.operations(200) if job["status"] in ("queued", "running")}
+            for meta_path in root.glob("*.json"):
+                try:
+                    if json.loads(meta_path.read_text()).get("status") == "receiving":
+                        protected.add(meta_path.stem)
+                except (OSError, ValueError):
+                    continue
             for entry in root.iterdir():
-                if re.fullmatch(r"[a-f0-9]{32}(?:\.json)?", entry.name) and now - entry.stat().st_mtime > 86400:
+                if entry.stem not in protected and re.fullmatch(r"[a-f0-9]{32}(?:\.json)?", entry.name) and now - entry.stat().st_mtime > 86400:
                     entry.unlink(missing_ok=True)
-            staged = sum(entry.stat().st_size for entry in root.iterdir() if entry.is_file())
+            staged = self.artifacts.space()
             if staged >= limit:
                 raise HTTPException(413, "Archive staging is full; use or discard an existing upload")
             identifier = secrets.token_hex(16)
@@ -214,12 +225,34 @@ class Operations:
         raise HTTPException(409, "That local tag already exists; choose a new revision tag")
 
     def prepare(self, action, values):
-        if action == "runner_capacity":
-            if set(values) - {"concurrent", "runner", "limit", "requests", "revision"}:
+        if action == "retry_gitlab_job":
+            if set(values) != {"project", "job"} or not self.gitlab:
+                raise HTTPException(400, "Choose a configured GitLab project and failed job")
+            job = self.gitlab.retry_job(values, preview=True)
+            return {"action": action, "values": values, "name": f"GitLab job {job['id']}",
+                "confirmation": f"retry job {job['id']}", "impact": f"Retries {job['name']} in stage {job['stage']} on ref {job['ref']}. This can execute the job's script again."}
+        if action in ("runner_capacity", "runner_image_policy"):
+            keys = {"runner", "pull_policy", "revision"} if action == "runner_image_policy" else {"concurrent", "runner", "limit", "requests", "revision"}
+            if set(values) - keys or action == "runner_image_policy" and set(values) != keys:
                 raise HTTPException(400, "Unsupported capacity settings")
             result = self.runner.call("preview", **values)
-            return {"action": action, "values": values, "name": "Runner capacity", "confirmation": f"set workers {result['after']['concurrent']}",
-                "impact": "Changes the shared job limit. Lowering it lets current jobs finish before more are accepted; no runner restart is issued.", "before": result["before"], "after": result["after"]}
+            policy = action == "runner_image_policy"
+            return {"action": action, "values": values, "name": "Runner image policy" if policy else "Runner capacity",
+                "confirmation": f"set image policy {values['runner']} {values['pull_policy']}" if policy else f"set workers {result['after']['concurrent']}",
+                "impact": "Changes this registration's image pull policy. A private backup is created and GitLab Runner reloads the setting. if-not-present reuses local images, including cached private images across projects using this runner." if policy else "Changes the shared job limit. Lowering it lets current jobs finish before more are accepted; no runner restart is issued.", "before": result["before"], "after": result["after"]}
+        if action == "export_image":
+            if set(values) != {"reference", "source_id"}:
+                raise HTTPException(400, "Choose an exact source image and tag")
+            image_reference(values["reference"])
+            client = self.client_factory()
+            try:
+                image = client.images.get(values["reference"])
+                if image.id != values["source_id"]:
+                    raise HTTPException(409, "Source tag changed; review again")
+                self.artifacts.space(image.attrs.get("Size", 0))
+            finally:
+                client.close()
+            return {"action": action, "values": values, "name": values["reference"], "confirmation": "export " + values["reference"], "impact": "Saves a copy of this image into private archive staging on this host."}
         if action not in ("load_image", "build_image", "tag_image"):
             raise HTTPException(400, "Choose a supported local image operation")
         if set(values) - {"upload_id", "reference", "source_id", "dockerfile", "profile_id"}:
@@ -282,12 +315,21 @@ class Operations:
                 raise HTTPException(409, "Preview expired or already used; create a new preview")
             if confirmation != plan["confirmation"]:
                 raise HTTPException(400, "Confirmation text does not match")
-            if plan["action"] != "runner_capacity" and self.tasks.full():
+            immediate = plan["action"] in ("runner_capacity", "runner_image_policy", "retry_gitlab_job")
+            if not immediate and self.tasks.full():
                 raise HTTPException(409, "Image-operation queue is full; wait for a task to finish")
             self.pending.pop(nonce)
             title = plan["action"] + ": " + plan["name"]
             self.store.event("action", "info", title, "Operator confirmed the reviewed operation")
-            if plan["action"] == "runner_capacity":
+            if plan["action"] == "retry_gitlab_job":
+                try:
+                    result = self.gitlab.retry_job(plan["values"])
+                except HTTPException:
+                    self.store.event("action", "warning", title, "GitLab retry refused or outcome unknown; inspect the latest attempt before retrying")
+                    raise
+                self.store.event("action", "success", title, result["message"])
+                return result
+            if plan["action"] in ("runner_capacity", "runner_image_policy"):
                 try:
                     result = self.runner.call("apply", **plan["values"])
                 except HTTPException:
@@ -300,6 +342,68 @@ class Operations:
             self.store.operation(identifier, "queued", payload, create=True)
             self.tasks.put_nowait((identifier, plan, payload))
             return {"id": identifier, "status": "queued", "message": "Task queued; progress appears below"}
+
+    def queue_transfer(self, task_id, action, values):
+        """Deterministic task IDs prevent replay after an ambiguous relay reply."""
+        self.require_enabled()
+        identifier(task_id)
+        if action not in ("export_image", "load_image"):
+            raise HTTPException(400, "Unsupported transfer operation")
+        with self.lock:
+            old = self.store.operation_by_id(task_id)
+            if old:
+                if old.get("action") != action or old.get("transfer_values") != values:
+                    raise HTTPException(409, "Transfer task identity is already in use")
+                return old
+            if self.tasks.full():
+                raise HTTPException(429, "Image-operation queue is full")
+            plan = self.prepare(action, values)
+            payload = {"action": action, "name": plan["name"], "message": "Waiting for image worker", "transfer_values": values}
+            self.store.operation(task_id, "queued", payload, create=True)
+            self.store.event("action", "info", action + ": " + plan["name"], "Fleet image transfer queued")
+            self.tasks.put_nowait((task_id, plan, payload))
+            return self.store.operation_by_id(task_id)
+
+    def readiness(self, reference):
+        image_reference(reference)
+        self.artifacts.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        result = {"reference": reference, "present": False, "operations_enabled": self.settings.operations,
+                  "staging_free": shutil.disk_usage(self.artifacts.root).free, "archive_limit": self.artifacts.limit,
+                  "engine_disk_free": None, "runner": {"available": False}}
+        client = self.client_factory()
+        try:
+            info = client.info()
+            result.update(engine_architecture=info.get("Architecture"), engine_os=info.get("OSType"), engine_available=True)
+            root = info.get("DockerRootDir")
+            if root:
+                try:
+                    result["engine_disk_free"] = shutil.disk_usage(root).free
+                except OSError:
+                    pass
+            try:
+                image = client.images.get(reference)
+                attrs = image.attrs
+                result.update(present=True, image_id=image.id, architecture=attrs.get("Architecture"), os=attrs.get("Os"),
+                              size=attrs.get("Size", 0), layers=attrs.get("RootFS", {}).get("Layers", []), runtime_digest=runtime_digest(attrs))
+            except docker.errors.ImageNotFound:
+                result["message"] = "Image tag is missing from this runner's Docker engine"
+        except docker.errors.DockerException:
+            raise HTTPException(503, "Docker engine is unavailable") from None
+        finally:
+            client.close()
+        try:
+            result["runner"] = {"available": True, **self.runner.call("state")}
+        except HTTPException as exc:
+            result["runner"]["message"] = exc.detail
+        registrations = result["runner"].get("facts", {}).get("runners", [])
+        policies = [r.get("pull_policy", "always") for r in registrations if r.get("executor") == "docker"]
+        result["checks"] = [
+            {"label": "Image tag", "status": "pass" if result["present"] else "fail", "detail": "Available locally" if result["present"] else "Import, build, or copy this image"},
+            {"label": "Archive staging", "status": "pass" if result["staging_free"] > 2*1024**3 else "fail", "detail": str(result["staging_free"]) + " bytes free"},
+            {"label": "Runner policy", "status": "unknown" if not policies else "pass" if all(p == "if-not-present" or isinstance(p, list) and "if-not-present" in p for p in policies) else "warning",
+             "detail": "Connect the runner helper to check policies" if not policies else "Always-pull registrations require registry access even when this image exists locally" if any(p == "always" or isinstance(p, list) and p == ["always"] for p in policies) else "Registrations can reuse local images"},
+        ]
+        return result
 
     def work(self):
         while not self.stopping.is_set():
@@ -384,6 +488,9 @@ class Operations:
 
     def run_image(self, client, identifier, plan, payload):
         values, action = plan["values"], plan["action"]
+        if action == "export_image":
+            self.artifacts.export(client, identifier, values, payload)
+            return
         if action == "tag_image":
             repository, tag = image_reference(values["reference"])
             self.ensure_new_tag(client, values["reference"])
@@ -392,7 +499,14 @@ class Operations:
             return
         if action == "load_image":
             path, meta = self.upload(values["upload_id"])
+            if meta.get("verify_sha256"):
+                with path.open("rb") as data:
+                    digest = hashlib.file_digest(data, "sha256").hexdigest()
+                if digest != meta["sha256"]:
+                    raise HTTPException(409, "Transferred archive checksum does not match; no import performed")
             manifest = self.validate_archive(path, client=client)
+            if values.get("reference") and (len(manifest) != 1 or manifest[0].get("RepoTags") != [values["reference"]]):
+                raise HTTPException(409, "Transferred archive tags do not match the reviewed reference")
             with path.open("rb") as data:
                 self.consume(identifier, payload, client.api.load_image(data))
             imported = {}

@@ -1,0 +1,99 @@
+.image-repair {
+  margin-bottom: 1.25rem;
+}
+.image-repair .image-check,
+.image-repair .image-policy {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.image-check label {
+  flex: 1;
+  min-width: 15rem;
+}
+.image-readiness,
+.fleet-image-copy,
+.image-job-retry {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+.image-readiness dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+}
+.image-readiness dt,
+.image-copy-route small {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.image-readiness dd {
+  margin: 0.3rem 0 0;
+}
+.image-policy {
+  margin-top: 1rem;
+}
+.image-policy small {
+  flex-basis: 100%;
+}
+.image-copy-route {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) auto minmax(10rem, 1fr);
+  align-items: center;
+  gap: 1.25rem;
+}
+.image-copy-route strong,
+.image-copy-route small {
+  display: block;
+}
+.image-repair .image-emulation {
+  display: flex;
+  align-items: start;
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+.image-repair .image-emulation input {
+  width: auto;
+  margin-top: 0.3rem;
+  flex: 0 0 auto;
+}
+.image-copy-review {
+  border-left: 3px solid var(--accent);
+  margin-top: 1.25rem;
+  padding: 0 0 0 1.25rem;
+}
+.image-copy-history article {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(15rem, 2fr);
+  gap: 1rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border);
+}
+.image-copy-history {
+  margin-top: 1.5rem;
+}
+.image-copy-history small {
+  display: block;
+  color: var(--text-muted);
+}
+.image-copy-history p {
+  margin: 0.4rem 0;
+}
+.image-copy-history progress {
+  width: 100%;
+}
+.image-job-retry summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+@media (max-width: 620px) {
+  .image-copy-route,
+  .image-copy-history article {
+    grid-template-columns: 1fr;
+  }
+  .image-copy-route > span {
+    display: none;
+  }
+}

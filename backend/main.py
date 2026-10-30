@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from backend.actions import Actions
-from backend.operations import Operations
+from backend.operations import Operations, image_reference
 from backend.gitlab_connection import GitLabConnection
 from backend.workloads import Workloads, scope_values
 from backend.collectors import DockerCollector, HostCollector, failure, gitlab_collect, gpu_collect, runner_collect, services_collect
@@ -79,6 +79,7 @@ def create_app(settings=None, collect=True, action_factory=None, operation_facto
     action_service = Actions(settings.actions, store, action_factory)
     operations = Operations(settings, store, operation_factory, runner_client)
     connection = GitLabConnection(settings, store)
+    operations.gitlab = connection
     workloads = Workloads(store, state)
     gitlab_refresh = asyncio.Event()
 
@@ -264,6 +265,43 @@ def create_app(settings=None, collect=True, action_factory=None, operation_facto
     @app.post("/api/operations/uploads/{identifier}/discard", dependencies=[Depends(authenticate)])
     def discard_upload(identifier: str):
         return operations.discard_upload(identifier)
+
+    @app.get("/api/operations/readiness", dependencies=[Depends(authenticate)])
+    def image_readiness(reference: str = Query(max_length=255)):
+        return operations.readiness(reference)
+
+    @app.get("/api/operations/transfers/{identifier}/chunk", dependencies=[Depends(authenticate)])
+    def export_chunk(identifier: str, offset: int = Query(ge=0)):
+        return operations.artifacts.chunk(identifier, offset)
+
+    @app.get("/api/operations/transfers/{identifier}/status", dependencies=[Depends(authenticate)])
+    def transfer_status(identifier: str):
+        from backend.image_artifacts import identifier as validate_identifier
+        job = store.operation_by_id(validate_identifier(identifier))
+        if not job:
+            raise HTTPException(404, "Transfer operation not found")
+        return job
+
+    @app.post("/api/operations/transfers/{identifier}/{step}", dependencies=[Depends(authenticate)])
+    def transfer_step(identifier: str, step: str, body: dict):
+        if step == "export":
+            if body.get("confirmation") != "export " + str(body.get("reference")):
+                raise HTTPException(400, "Confirm the exact export reference")
+            return operations.queue_transfer(identifier, "export_image", {k: body[k] for k in ("reference", "source_id") if k in body})
+        if step == "import":
+            image_reference(body.get("reference"))
+            if body.get("confirmation") != "load transferred image " + body["reference"]:
+                raise HTTPException(400, "Confirm the exact transferred image reference")
+            return operations.queue_transfer(identifier, "load_image", {"upload_id": identifier, "reference": body["reference"]})
+        if step == "receive":
+            if body.get("step") == "begin":
+                image_reference(body.get("reference"))
+                if body.get("confirmation") != "receive " + body["reference"]:
+                    raise HTTPException(400, "Confirm the exact received image reference")
+            return operations.artifacts.receive(identifier, body)
+        if step == "discard":
+            return operations.artifacts.discard_export(identifier)
+        raise HTTPException(404, "Unknown image transfer step")
 
     @app.get("/api/workloads", dependencies=[Depends(authenticate)])
     def workload_view(project: str = Query(default="all", max_length=512), pipeline: str = Query(default="all", max_length=512), image: str = Query(default="all", max_length=512),

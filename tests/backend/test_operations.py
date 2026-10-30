@@ -26,15 +26,25 @@ class FakeImage:
         assert not force
         self.engine.tags[repository + ":" + tag] = self.id
         return True
+    @property
+    def attrs(self):
+        return {"Architecture": "amd64", "Os": "linux", "Size": 100, "RootFS": {"Layers": ["sha256:" + "b" * 64]}, "Config": {"Env": ["SAFE=fixture"]}}
 
 
 class Engine:
     def __init__(self):
         self.tags = {"source:v1": IMAGE, IMAGE: IMAGE}
         self.images = SimpleNamespace(get=self.get)
-        self.api = SimpleNamespace(build=self.build, load_image=self.load)
+        self.api = SimpleNamespace(build=self.build, load_image=self.load, get_image=self.export)
         self.builds = []
         self.reject = False
+        self.loads = 0
+    def info(self):
+        return {"Architecture": "x86_64", "OSType": "linux"}
+    def export(self, reference):
+        attrs = self.get(reference).attrs
+        config = {"architecture": attrs["Architecture"], "os": attrs["Os"], "config": attrs["Config"], "rootfs": {"diff_ids": attrs["RootFS"]["Layers"]}}
+        return iter([archive({"manifest.json": json.dumps([{"Config": "a"*64 + ".json", "RepoTags": [reference]}]), "a"*64 + ".json": json.dumps(config)})])
     def get(self, reference):
         if reference not in self.tags:
             raise docker.errors.ImageNotFound("missing")
@@ -52,6 +62,7 @@ class Engine:
             self.tags[kwargs["tag"]] = IMAGE
             yield {"aux": {"ID": IMAGE}}
     def load(self, data):
+        self.loads += 1
         assert data.read(1)
         self.tags["imported:v1"] = IMAGE
         yield json.dumps({"stream": "Loaded image: imported:v1\n"}).encode()

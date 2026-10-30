@@ -11,10 +11,16 @@ import { bytes, type Upload } from "../../lib/api";
 import { Pager } from "../../components/Pager";
 import { tone } from "../../components/Status";
 import { LoadingState } from "../../components/LoadingState";
+import { ImageRepair } from "./ImageRepair";
 
 type Facts = {
   concurrent: number;
-  runners: Array<{ name: string; limit: number; request_concurrency: number }>;
+  runners: Array<{
+    name: string;
+    limit: number;
+    request_concurrency: number;
+    pull_policy?: string | string[];
+  }>;
 };
 type Capabilities = {
   enabled: boolean;
@@ -28,6 +34,7 @@ type Capabilities = {
   build_profiles: Array<{ id: string; label: string; dockerfile: string }>;
   build_profiles_message?: string;
   uploads: Upload[];
+  gitlab_retry_enabled?: boolean;
 };
 type Review = {
   nonce: string;
@@ -250,6 +257,12 @@ export function OperatorConsole({
           </div>
         </div>
       )}
+      <ImageRepair
+        token={token}
+        enabled={enabled}
+        retryEnabled={!!cap.gitlab_retry_enabled}
+        preview={preview}
+      />
       <div className="operator-grid">
         <Panel title="Runner capacity">
           <p>
@@ -630,9 +643,19 @@ export function OperatorConsole({
                         <td>
                           {review.before!.runners[index].limit} /{" "}
                           {review.before!.runners[index].request_concurrency}
+                          <small>
+                            Image policy:{" "}
+                            {String(
+                              review.before!.runners[index].pull_policy ||
+                                "always",
+                            )}
+                          </small>
                         </td>
                         <td>
                           {row.limit} / {row.request_concurrency}
+                          <small>
+                            Image policy: {String(row.pull_policy || "always")}
+                          </small>
                         </td>
                       </tr>
                     ))}

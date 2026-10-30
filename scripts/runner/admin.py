@@ -72,7 +72,8 @@ def safe_facts(config):
     return {"updated_at": time.time(), "concurrent": config.get("concurrent"), "runners": [
         {"name": r.get("name"), "executor": r.get("executor"), "limit": r.get("limit", 0),
          "request_concurrency": r.get("request_concurrency", 1),
-         "cpus": r.get("docker", {}).get("cpus"), "memory": r.get("docker", {}).get("memory")}
+         "cpus": r.get("docker", {}).get("cpus"), "memory": r.get("docker", {}).get("memory"),
+         "pull_policy": r.get("docker", {}).get("pull_policy", "always")}
         for r in config.get("runners", [])]}
 
 
@@ -125,6 +126,38 @@ def capacity_config(text, concurrent, runner=None, limit=None, requests=None):
         first_table = re.search(r"(?m)^\s*\[", text)
         boundary = first_table.start() if first_table else len(text)
         candidate = replace_key(text[:boundary], "concurrent", str(concurrent)) + text[boundary:]
+    if tomllib.loads(candidate) != expected:
+        raise ValueError("Unsupported configuration layout; no changes applied")
+    return candidate
+
+
+def image_policy_config(text, runner, policy):
+    """Change one Docker registration's pull policy and no other values."""
+    if policy not in ("always", "if-not-present"):
+        raise ValueError("Choose always or if-not-present")
+    parsed = tomllib.loads(text)
+    expected = copy.deepcopy(parsed)
+    matches = [i for i, r in enumerate(parsed.get("runners", [])) if r.get("name") == runner]
+    boundaries = list(re.finditer(r"(?m)^\s*\[\[runners\]\]\s*(?:#.*)?$", text))
+    if len(matches) != 1 or len(boundaries) != len(parsed.get("runners", [])):
+        raise ValueError("Choose a uniquely named runner registration")
+    index = matches[0]
+    selected = expected["runners"][index]
+    if selected.get("executor") != "docker" or "docker" not in selected:
+        raise ValueError("Choose a Docker runner")
+    if policy not in selected["docker"].get("allowed_pull_policies", ["always", "if-not-present"]):
+        raise ValueError("Policy is restricted by this runner's allowed_pull_policies")
+    selected["docker"]["pull_policy"] = policy
+    start = boundaries[index].start()
+    end = boundaries[index + 1].start() if index + 1 < len(boundaries) else len(text)
+    block = text[start:end]
+    table = re.search(r"(?m)^[ \t]*\[runners\.docker\][ \t]*(?:#.*)?\n", block)
+    if not table:
+        raise ValueError("Unsupported Docker table layout")
+    next_table = re.search(r"(?m)^[ \t]*\[", block[table.end():])
+    boundary = table.end() + next_table.start() if next_table else len(block)
+    section = replace_key(block[table.start():boundary], "pull_policy", json.dumps(policy), table.end() - table.start())
+    candidate = text[:start] + block[:table.start()] + section + block[boundary:] + text[end:]
     if tomllib.loads(candidate) != expected:
         raise ValueError("Unsupported configuration layout; no changes applied")
     return candidate

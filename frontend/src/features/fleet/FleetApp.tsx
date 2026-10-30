@@ -297,7 +297,10 @@ export function FleetApp({
     });
   if (workspaceOpen) {
     return (
-      <HostApiProvider prefix={`fleet/nodes/${selected}/workspace/`}>
+      <HostApiProvider
+        prefix={`fleet/nodes/${selected}/workspace/`}
+        hosts={nodes}
+      >
         <Suspense
           fallback={
             <main className="login">
