@@ -5,6 +5,7 @@ import { WorkspaceBoundary } from "./WorkspaceBoundary";
 import "@fontsource-variable/archivo/wdth.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "./styles.css";
+import "../components/motion.css";
 import { applyTheme, storedTheme } from "../components/ThemeToggle";
 import { BrandMark } from "../components/AppSidebar";
 import { requestJson } from "../lib/request";

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 
 export type Theme = "system" | "light" | "dark";
@@ -13,9 +13,19 @@ export function storedTheme(): Theme {
   }
 }
 
-/** "system" removes the attribute so the prefers-color-scheme rules apply. */
-export function applyTheme(theme: Theme) {
+let fade: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * "system" removes the attribute so the prefers-color-scheme rules apply.
+ * `animate` cross-fades the change (see motion.css); the first paint never does.
+ */
+export function applyTheme(theme: Theme, animate = false) {
   const root = document.documentElement;
+  if (animate) {
+    root.classList.add("theme-switching");
+    clearTimeout(fade);
+    fade = setTimeout(() => root.classList.remove("theme-switching"), 300);
+  }
   if (theme === "system") root.removeAttribute("data-theme");
   else root.setAttribute("data-theme", theme);
 }
@@ -28,8 +38,10 @@ const options = [
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>(storedTheme);
+  const shown = useRef(theme);
   useEffect(() => {
-    applyTheme(theme);
+    applyTheme(theme, theme !== shown.current);
+    shown.current = theme;
     try {
       if (theme === "system") localStorage.removeItem(key);
       else localStorage.setItem(key, theme);

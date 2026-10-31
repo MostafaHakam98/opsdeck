@@ -953,7 +953,8 @@ test("theme choice applies dark tokens, persists, and returns to system", async 
   const light = await background();
   await page.getByRole("radio", { name: "Dark theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  expect(await background()).not.toBe(light);
+  // A chosen theme cross-fades, so read the background once it settles.
+  await expect.poll(background).not.toBe(light);
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
@@ -965,9 +966,9 @@ test("theme choice applies dark tokens, persists, and returns to system", async 
   );
   await page.getByRole("radio", { name: "Match system theme" }).click();
   await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
-  expect(await background()).toBe(light);
+  await expect.poll(background).toBe(light);
   await page.emulateMedia({ colorScheme: "dark" });
-  expect(await background()).not.toBe(light);
+  await expect.poll(background).not.toBe(light);
 });
 
 test("fleet retains the complete host sidebar and scopes every original page to the selected host", async ({
