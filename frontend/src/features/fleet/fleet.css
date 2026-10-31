@@ -524,6 +524,10 @@
 .pulse-row:hover .pulse-cells {
   filter: saturate(1.15);
 }
+/* The previous window stays readable, dimmed, while a newly chosen one loads. */
+.pulse-grid[data-loading] {
+  opacity: 0.5;
+}
 .pulse-now {
   text-align: right;
   font-family: var(--font-display);

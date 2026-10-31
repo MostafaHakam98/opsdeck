@@ -17,6 +17,7 @@ Native mode loads `.env` without evaluating shell code. Whitespace around `=` an
 | `OPSDECK_FINDINGS_PATH` | `./data/findings.json` native | Private survey archive; Compose sets `/data/findings.json`; reloads every 30 seconds |
 | `OPSDECK_SAMPLE_SECONDS` | `10`, minimum `5` | Host/history sampling interval |
 | `OPSDECK_RETENTION_DAYS` | `30`, minimum `1` | Metrics and threshold-event retention |
+| `OPSDECK_TREND_RETENTION_DAYS` | `366`, never below `OPSDECK_RETENTION_DAYS` | Central server: 15-minute fleet pulse rollups (CPU, memory, GPU averages per host) behind the 7-day, 30-day, and year pulse windows |
 | `OPSDECK_ACTIONS` | `false` | Opt-in stop/restart operations |
 | `OPSDECK_VERSION` | `SOURCE_COMMIT` file, else `dev` | Build label reported by `/healthz`, the fleet overview, and `opsdeck_build_info`; when unset, the first line of a `SOURCE_COMMIT` file at the repository root is used |
 | `OPSDECK_ENV_FILE` | `.env` native | Alternate launcher config file; image uses `/data/config.env` |

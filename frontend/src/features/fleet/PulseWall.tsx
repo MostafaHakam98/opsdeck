@@ -8,8 +8,8 @@ import React, {
 } from "react";
 import { Section, Segmented, StatusDot } from "./FleetComponents";
 import {
+  bucketLabel,
   bucketRange,
-  clockTime,
   displayState,
   HEAT_LEGEND,
   heatColor,
@@ -17,6 +17,7 @@ import {
   pulseRowLabel,
   pulseSeries,
   pulseStats,
+  pulseTime,
   STATE_LABELS,
 } from "./fleetModel";
 import type { Node, Pulse, PulseMetric } from "./types";
@@ -28,6 +29,9 @@ export const PULSE_WINDOWS = [
   { value: 60, label: "1h" },
   { value: 360, label: "6h" },
   { value: 1440, label: "24h" },
+  { value: 10080, label: "7d" },
+  { value: 43200, label: "30d" },
+  { value: 525600, label: "1y" },
 ];
 
 type Active = { id: string; index: number; x: number; y: number };
@@ -220,9 +224,13 @@ export function PulseWall({
   }, [hasNodes, minutes]);
   const activeNode = active && nodes.find((n) => n.id === active.id);
   const activeValue = active ? series.get(active.id)?.[active.index] : null;
-  const bucketMinutes = pulse
-    ? Math.round(pulse.bucket_seconds / 60)
-    : Math.round(minutes / BUCKETS);
+  // Until the newly chosen window arrives, the wall keeps describing the previous one, dimmed.
+  const shown = pulse ? Math.round((pulse.end - pulse.start) / 60) : minutes;
+  const loadingWindow = shown !== minutes;
+  const bucketSeconds = pulse ? pulse.bucket_seconds : (minutes * 60) / BUCKETS;
+  // The newest cell ends on a future bucket boundary (up to days ahead for a year); never label past now.
+  const time = (seconds: number) =>
+    pulseTime(Math.min(seconds, Date.now() / 1000), shown);
   return (
     <Section
       title="Fleet pulse"
@@ -249,8 +257,8 @@ export function PulseWall({
     >
       <p className="pulse-caption">
         Each row is a host and each cell averages {METRIC_LABELS[metric]} over{" "}
-        {bucketMinutes === 1 ? "one minute" : `${bucketMinutes} minutes`}.
-        Select a row to open the host; use the arrow keys to read cells.
+        {bucketLabel(bucketSeconds)}. Select a row to open the host; use the
+        arrow keys to read cells.
       </p>
       {error && (
         <p className="fleet-inline-error" role="status">
@@ -260,19 +268,17 @@ export function PulseWall({
       )}
       {nodes.length ? (
         <div className="pulse-scroll" ref={scroller}>
-          <div className="pulse-grid">
+          <div
+            className="pulse-grid"
+            data-loading={loadingWindow || undefined}
+            aria-busy={loadingWindow}
+          >
             <div className="pulse-axis" aria-hidden="true">
               <span />
               <span className="pulse-axis-times">
-                <span>
-                  {pulse ? clockTime(pulse.start, minutes > 360) : ""}
-                </span>
-                <span>
-                  {pulse
-                    ? clockTime((pulse.start + pulse.end) / 2, minutes > 360)
-                    : ""}
-                </span>
-                <span>{pulse ? clockTime(pulse.end, minutes > 360) : ""}</span>
+                <span>{pulse ? time(pulse.start) : ""}</span>
+                <span>{pulse ? time((pulse.start + pulse.end) / 2) : ""}</span>
+                <span>{pulse ? time(pulse.end) : ""}</span>
               </span>
               <span>Now</span>
             </div>
@@ -283,7 +289,7 @@ export function PulseWall({
                   node={node}
                   values={series.get(node.id) || EMPTY}
                   metric={metric}
-                  minutes={minutes}
+                  minutes={shown}
                   activeIndex={active?.id === node.id ? active.index : null}
                   onOpen={onOpen}
                   onActivate={onActivate}
@@ -318,9 +324,7 @@ export function PulseWall({
           <strong>{activeNode.name}</strong>
           <span>
             {pulse
-              ? bucketRange(pulse, active.index)
-                  .map((t) => clockTime(t, minutes > 360))
-                  .join(" to ")
+              ? bucketRange(pulse, active.index).map(time).join(" to ")
               : "Waiting for pulse data"}
           </span>
           <span>

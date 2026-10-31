@@ -5,6 +5,7 @@ import type { Fleet, Detail, FleetPoint, Point, Pulse } from "./types";
 
 const FLEET_MS = 10000;
 const PULSE_MS = 30000;
+const LONG_PULSE_MS = 120000;
 const HISTORY_MS = 60000;
 
 export type FleetDataOptions = {
@@ -22,13 +23,18 @@ export type FleetDataOptions = {
   auditLimit: number;
 };
 
+/** Windows past a day have cells of hours or days; refreshing them every 30s only redraws the same cells. */
+export function pulseInterval(pulseMinutes: number) {
+  return pulseMinutes > 1440 ? LONG_PULSE_MS : PULSE_MS;
+}
+
 /** Fleet history buckets span hours/599; polling faster only recomputes the same buckets. */
 export function historyInterval(fleetHours: number) {
   return Math.max(HISTORY_MS, ((fleetHours * 3600) / 599) * 1000);
 }
 
 /**
- * Polls the fleet every 10s, the pulse wall every 30s and the capacity
+ * Polls the fleet every 10s, the pulse wall every 30s (2 min past a day) and the capacity
  * history at its bucket width, at least 60s (overview only). Pulse and
  * history requests run beside the fleet cycle so a slow aggregate never delays
  * the live refresh, and their timestamps survive effect restarts so a refresh
@@ -101,7 +107,7 @@ export function useFleetData(options: FleetDataOptions) {
     function loadAggregates() {
       const now = Date.now();
       if (!overview) return;
-      if (now - pulseAt.current >= PULSE_MS) {
+      if (now - pulseAt.current >= pulseInterval(pulseMinutes)) {
         pulseAt.current = now;
         get<Pulse>(`fleet/pulse?minutes=${pulseMinutes}&buckets=60`).then(
           (value) => {

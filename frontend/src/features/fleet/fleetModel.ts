@@ -350,6 +350,7 @@ export function pulseSeries(
   return Array.isArray(values) ? values : [];
 }
 export function windowLabel(minutes: number) {
+  if (minutes === 525600) return "the last year";
   if (minutes % 1440 === 0)
     return minutes === 1440
       ? "the last 24 hours"
@@ -384,6 +385,27 @@ export function clockTime(seconds: number, withDate = false) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+/** Pulse axis and tooltip times: clock only up to 6h, then dates, and dates alone past a month. */
+export function pulseTime(seconds: number, minutes: number) {
+  if (minutes <= 43200) return clockTime(seconds, minutes > 360);
+  return new Date(seconds * 1000).toLocaleDateString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+/** Width of one pulse cell in words: "one minute", "24 minutes", "2.8 hours", "6.1 days". */
+export function bucketLabel(seconds: number) {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return minutes <= 1 ? "one minute" : `${minutes} minutes`;
+  const round = (value: number) => Number(value.toFixed(1));
+  if (minutes < 1440) {
+    const hours = round(minutes / 60);
+    return hours === 1 ? "one hour" : `${hours} hours`;
+  }
+  const days = round(minutes / 1440);
+  return days === 1 ? "one day" : `${days} days`;
 }
 
 /**

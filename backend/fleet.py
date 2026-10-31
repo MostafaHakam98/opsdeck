@@ -25,6 +25,8 @@ MAX_TELEMETRY_BYTES = 2 * 1024 * 1024
 SOURCE_NAMES = ("host", "docker", "gpu", "runner", "services")
 METRICS = ("cpu", "memory", "gpu", "rx", "tx", "io_pressure", "ci_running")
 PULSE = ("cpu", "memory", "gpu")
+# Pulse buckets of an hour or more read 15-minute rollups instead of every raw sample.
+ROLLUP_SECONDS = 900
 NODE_COLUMNS = "id,name,cluster,created_at,revoked,last_seen,collected_at,summary,notes,maintenance,ignored_sources"
 IGNORABLE = ("docker", "gpu", "runner", "services")
 # (metric, title, label, critical, warning); all three are percentages.
@@ -208,6 +210,18 @@ class Fleet(Store):
             db.execute("CREATE TABLE IF NOT EXISTS fleet_samples (node_id TEXT NOT NULL, sample_id TEXT NOT NULL, ts REAL NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(node_id,sample_id))")
             db.execute("CREATE INDEX IF NOT EXISTS fleet_sample_time ON fleet_samples(node_id,ts)")
             db.execute("CREATE INDEX IF NOT EXISTS fleet_retention ON fleet_samples(ts)")
+            # Sums and counts, so rollups average exactly like the raw samples they replace.
+            # Created and backfilled under one write lock so concurrent starts backfill once.
+            db.execute("BEGIN IMMEDIATE")
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fleet_rollups'").fetchone():
+                db.execute("CREATE TABLE fleet_rollups (node_id TEXT NOT NULL, bucket INTEGER NOT NULL, "
+                           + ",".join(f"{key}_sum REAL NOT NULL, {key}_n INTEGER NOT NULL" for key in PULSE)
+                           + ", PRIMARY KEY(node_id,bucket)) WITHOUT ROWID")
+                extracted = ",".join(f"json_extract(payload,'$.{key}') AS {key}" for key in PULSE)
+                sums = ",".join(f"TOTAL({key}),COUNT({key})" for key in PULSE)
+                db.execute(f"INSERT INTO fleet_rollups SELECT node_id,CAST(ts/{ROLLUP_SECONDS} AS INTEGER) AS bucket,{sums} "
+                           f"FROM (SELECT node_id,ts,{extracted} FROM fleet_samples) GROUP BY node_id,bucket")
+            db.commit()
             # Additive, defaulted columns: the previous release still reads and writes this table.
             # Check and alter under one write lock so concurrent starts cannot both add a column.
             db.execute("BEGIN IMMEDIATE")
@@ -277,9 +291,10 @@ class Fleet(Store):
         # Reject non-finite nested values before persisting or returning JSON.
         try:
             payload = json.dumps(sources, allow_nan=False)
-            metrics = json.dumps(metric_values(sources), allow_nan=False)
+            measured = metric_values(sources)
+            metrics = json.dumps(measured, allow_nan=False)
             host = source_data(sources, "host", {})
-            summary = json.dumps({"metrics": metric_values(sources),
+            summary = json.dumps({"metrics": measured,
                                   "source_status": {key: item["status"] for key, item in sources.items()},
                                   "source_messages": {key: item["message"][:300] for key, item in sources.items() if item.get("message")},
                                   "hostname": host["hostname"][:255] if isinstance(host.get("hostname"), str) else None,
@@ -292,6 +307,11 @@ class Fleet(Store):
             if not node:
                 raise HTTPException(401, "Valid agent credential required")
             changed = db.execute("INSERT OR IGNORE INTO fleet_samples VALUES (?,?,?,?)", (identifier, str(body.sample_id), body.collected_at, metrics))
+            if changed.rowcount:
+                values = [measured[key] for key in PULSE]
+                db.execute("INSERT INTO fleet_rollups VALUES (?,?" + ",?,?" * len(PULSE) + ") ON CONFLICT(node_id,bucket) DO UPDATE SET "
+                           + ",".join(f"{key}_sum={key}_sum+excluded.{key}_sum,{key}_n={key}_n+excluded.{key}_n" for key in PULSE),
+                           (identifier, int(body.collected_at // ROLLUP_SECONDS), *(x for v in values for x in (v or 0, v is not None))))
             # A backfilled/retried sample cannot replace a newer live snapshot.
             if changed.rowcount and (node[0] is None or body.collected_at > node[0]):
                 db.execute("UPDATE fleet_nodes SET collected_at=?,snapshot=?,summary=? WHERE id=?", (body.collected_at, payload, summary, identifier))
@@ -378,15 +398,27 @@ class Fleet(Store):
             return [dict(row) for row in rows]
 
     def pulse(self, minutes, buckets):
-        """Per-node bucket averages. The window ends on a bucket boundary so cells stay put between polls."""
+        """Per-node bucket averages. The window ends on a bucket boundary so cells stay put between polls.
+
+        Buckets of an hour or more average 15-minute rollups, each counted in the cell holding its midpoint,
+        so week to year windows stay fast and outlive raw sample retention.
+        """
         width = minutes * 60 / buckets
         end = (math.floor(time.time() / width) + 1) * width
         start = end - minutes * 60
-        columns = ",".join(f"AVG(json_extract(payload,'$.{key}'))" for key in PULSE)
         with self.connect() as db:
             identifiers = [row[0] for row in db.execute("SELECT id FROM fleet_nodes ORDER BY cluster,name,id")]
-            rows = db.execute(f"SELECT node_id,CAST((ts-?)/? AS INTEGER) AS bucket,{columns} FROM fleet_samples WHERE ts>=? AND ts<? GROUP BY node_id,bucket",
-                              (start, width, start, end)).fetchall()
+            if width >= 4 * ROLLUP_SECONDS:
+                columns = ",".join(f"SUM({key}_sum)/NULLIF(SUM({key}_n),0)" for key in PULSE)
+                # Rollups straddling either window edge count in the edge cell, so the newest minutes always show.
+                middle = f"MIN(MAX(bucket*{ROLLUP_SECONDS}+{ROLLUP_SECONDS // 2},:start),:end-1)"
+                rows = db.execute(f"SELECT node_id,CAST(({middle}-:start)/:width AS INTEGER) AS cell,{columns} FROM fleet_rollups "
+                                  f"WHERE bucket*{ROLLUP_SECONDS}<:end AND (bucket+1)*{ROLLUP_SECONDS}>:start GROUP BY node_id,cell",
+                                  {"start": start, "end": end, "width": width}).fetchall()
+            else:
+                columns = ",".join(f"AVG(json_extract(payload,'$.{key}'))" for key in PULSE)
+                rows = db.execute(f"SELECT node_id,CAST((ts-?)/? AS INTEGER) AS bucket,{columns} FROM fleet_samples WHERE ts>=? AND ts<? GROUP BY node_id,bucket",
+                                  (start, width, start, end)).fetchall()
         nodes = {identifier: {key: [None] * buckets for key in PULSE} for identifier in identifiers}
         for identifier, bucket, *values in rows:
             if identifier in nodes and 0 <= bucket < buckets:
@@ -412,10 +444,12 @@ class Fleet(Store):
                               ") GROUP BY bucket ORDER BY bucket", (start, width, start, end, *((cluster,) if cluster else ()))).fetchall()
             return [dict(row) for row in rows]
 
-    def prune(self, retention):
+    def prune(self, retention, trend_retention=None):
         with self.connect() as db:
             cutoff = time.time() - retention * 86400
             db.execute("DELETE FROM fleet_samples WHERE ts < ?", (cutoff,))
+            trend_cutoff = time.time() - max(retention, trend_retention or retention) * 86400
+            db.execute("DELETE FROM fleet_rollups WHERE bucket < ?", (math.floor(trend_cutoff / ROLLUP_SECONDS),))
             db.execute("UPDATE fleet_nodes SET snapshot=NULL,summary=NULL WHERE collected_at < ? AND snapshot IS NOT NULL", (cutoff,))
 
 
@@ -428,7 +462,7 @@ def create_fleet_app(settings):
 
     async def maintain():
         while True:
-            await asyncio.to_thread(fleet.prune, settings.retention)
+            await asyncio.to_thread(fleet.prune, settings.retention, settings.trend_retention)
             await asyncio.sleep(60)
 
     @asynccontextmanager
@@ -510,7 +544,7 @@ def create_fleet_app(settings):
         return await transfers.discard(identifier)
 
     @app.get("/api/fleet/pulse", dependencies=[Depends(authenticate)])
-    def pulse(minutes: int = Query(default=60, ge=5, le=1440), buckets: int = Query(default=60, ge=10, le=120)):
+    def pulse(minutes: int = Query(default=60, ge=5, le=525600), buckets: int = Query(default=60, ge=10, le=120)):
         return fleet.pulse(minutes, buckets)
 
     @app.get("/api/fleet/history", dependencies=[Depends(authenticate)])

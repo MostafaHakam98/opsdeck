@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   backoffDelay,
+  bucketLabel,
   csvCell,
   deriveAlerts,
   deriveSummary,
@@ -15,6 +16,7 @@ import {
   hostsCsv,
   pulseRowLabel,
   pulseStats,
+  pulseTime,
   relativeAge,
   sortNodes,
   sparklinePath,
@@ -234,6 +236,28 @@ describe("pulse helpers", () => {
     expect(
       pulseRowLabel("build-02", "gpu", null, pulseStats([null]), 1440),
     ).toBe("build-02, GPU now no data, no samples in the last 24 hours");
+  });
+  it("describes week, month and year windows", () => {
+    expect(pulseRowLabel("gpu-01", "gpu", 7, pulseStats([7]), 525600)).toBe(
+      "gpu-01, GPU now 7%, peak 7% in the last year",
+    );
+    expect(pulseRowLabel("gpu-02", "cpu", 1, pulseStats([1]), 10080)).toMatch(
+      /in the last 7 days$/,
+    );
+    expect(
+      [60, 1440, 10080, 43200, 86400, 525600].map((s) => bucketLabel(s)),
+    ).toEqual([
+      "one minute",
+      "24 minutes",
+      "2.8 hours",
+      "12 hours",
+      "one day",
+      "6.1 days",
+    ]);
+    const noon = new Date(2026, 9, 31, 12, 30).getTime() / 1000;
+    expect(pulseTime(noon, 60)).not.toMatch(/2026/);
+    expect(pulseTime(noon, 525600)).toMatch(/2026/);
+    expect(pulseTime(noon, 525600)).not.toMatch(/12:30/);
   });
   it("draws sparklines with gaps for missing samples", () => {
     expect(sparklinePath([], 100, 20)).toBe("");
