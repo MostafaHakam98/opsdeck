@@ -1,0 +1,185 @@
+/*
+ * Motion. Short, ease-out movement that follows the faceplate: panels slide
+ * into place when a page or host opens, controls answer hover and press,
+ * and live readings (bars, heat cells) glide to their new value instead of
+ * jumping. Everything here is opt-in through prefers-reduced-motion, so a
+ * reduced-motion visitor keeps the static interface unchanged.
+ */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-fast: 140ms;
+  --motion: 220ms;
+  --motion-slow: 420ms;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Page and host changes: each newly mounted block rises in, in order. */
+  .content > *,
+  .fleet-main > *,
+  .login-card,
+  details.collapsible[open] > :not(summary) {
+    animation: motion-rise var(--motion) var(--ease-out) backwards;
+  }
+  .content > :nth-child(2),
+  .fleet-main > :nth-child(2) {
+    animation-delay: 30ms;
+  }
+  .content > :nth-child(3),
+  .fleet-main > :nth-child(3) {
+    animation-delay: 60ms;
+  }
+  .content > :nth-child(4),
+  .fleet-main > :nth-child(4) {
+    animation-delay: 90ms;
+  }
+  .content > :nth-child(n + 5),
+  .fleet-main > :nth-child(n + 5) {
+    animation-delay: 120ms;
+  }
+  .login-card {
+    animation-duration: var(--motion-slow);
+  }
+
+  /* Controls answer hover and press. */
+  .primary,
+  .secondary,
+  .danger,
+  .ghost,
+  .icon-button,
+  .fleet-icon-button,
+  .fleet-segmented button,
+  .theme-toggle button,
+  .sidebar nav button,
+  .source-list button,
+  .palette-option,
+  .fleet-host-link,
+  .fleet-back {
+    transition:
+      background-color var(--motion-fast) ease,
+      border-color var(--motion-fast) ease,
+      box-shadow var(--motion-fast) ease,
+      color var(--motion-fast) ease,
+      opacity var(--motion-fast) ease,
+      transform var(--motion-fast) var(--ease-out);
+  }
+  :is(.primary, .secondary, .danger, .ghost):active:not(:disabled),
+  :is(.icon-button, .fleet-icon-button):active:not(:disabled) {
+    transform: translateY(1px) scale(0.97);
+  }
+  .sidebar nav button svg,
+  .palette-option > svg:first-child {
+    transition: color var(--motion-fast) ease;
+  }
+  /* The lit rail LED switches on rather than appearing. */
+  .sidebar nav button.active::before {
+    animation: motion-led var(--motion-slow) var(--ease-out);
+  }
+  /* Tabs: the underline grows from the centre on hover and selection. */
+  .fleet-tabs [role="tab"] {
+    transition: color var(--motion-fast) ease;
+  }
+  .fleet-tabs [role="tab"]::after {
+    transform: scaleX(0.4);
+    transition:
+      background-color var(--motion) ease,
+      transform var(--motion) var(--ease-out);
+  }
+  .fleet-tabs [role="tab"]:hover::after,
+  .fleet-tabs [role="tab"][aria-selected="true"]::after {
+    transform: none;
+  }
+  tbody td,
+  .pulse-row,
+  .status-dot,
+  .badge {
+    transition:
+      background-color var(--motion) ease,
+      color var(--motion) ease;
+  }
+  .host-card {
+    transition:
+      border-color var(--motion) ease,
+      box-shadow var(--motion) ease;
+  }
+  .host-card:hover {
+    box-shadow:
+      inset 3px 0 0 var(--unit-state),
+      var(--shadow-lg);
+  }
+
+  /* Live readings glide to new values; bars fill from the left on first view. */
+  .meter span,
+  .fleet-minibar-track i,
+  .fleet-usage i {
+    transform-origin: left center;
+    transition:
+      width var(--motion-slow) var(--ease-out),
+      background-color var(--motion) ease;
+    animation: motion-fill 0.7s var(--ease-out) backwards;
+  }
+  .pulse-cells i {
+    transition: background-color var(--motion-slow) ease;
+  }
+  .pulse-cells {
+    transition: filter var(--motion) ease;
+  }
+  .pulse-grid {
+    transition: opacity var(--motion) ease;
+  }
+  .pulse-tooltip {
+    animation: motion-fade var(--motion-fast) ease-out;
+    transition:
+      left 90ms var(--ease-out),
+      top 90ms var(--ease-out);
+  }
+
+  /* Dialogs open from where they will rest (the palette has its own in overlays.css). */
+  .fleet-dialog-backdrop {
+    animation: motion-fade var(--motion) ease-out;
+  }
+  .fleet-dialog {
+    animation: motion-pop var(--motion) var(--ease-out);
+  }
+
+  /* Theme changes cross-fade instead of flashing. */
+  html.theme-switching,
+  html.theme-switching *,
+  html.theme-switching *::before,
+  html.theme-switching *::after {
+    transition:
+      background-color 260ms ease,
+      border-color 260ms ease,
+      color 260ms ease,
+      fill 260ms ease,
+      stroke 260ms ease !important;
+  }
+}
+
+@keyframes motion-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes motion-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes motion-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+@keyframes motion-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes motion-led {
+  from {
+    opacity: 0;
+    transform: scaleY(0.2);
+  }
+}

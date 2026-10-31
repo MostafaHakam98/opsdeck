@@ -153,6 +153,7 @@ The API and agent must have separate Compose project names and data volumes; nev
 | `OPSDECK_AGENT_QUEUE_SAMPLES` | Agent | `360` snapshots, maximum 10000 |
 | `OPSDECK_AGENT_QUEUE_MIB` | Agent | `64` MiB of queued payloads, maximum 1024 |
 | `OPSDECK_RETENTION_DAYS` | Server | `30`; retained numeric history and latest inventory |
+| `OPSDECK_TREND_RETENTION_DAYS` | Server | `366`; 15-minute CPU/memory/GPU rollups for long pulse windows, at least the history retention |
 | `SSL_CERT_FILE` | Agent | Optional trusted corporate CA bundle |
 | `HTTPS_PROXY`, `NO_PROXY` | Agent | HTTPX outbound proxy configuration |
 
@@ -174,7 +175,7 @@ The dashboard distinguishes:
 - **Offline:** no contact for `max(90 seconds, 6 × sample interval)`.
 - **Revoked:** explicitly disconnected by an operator.
 
-An observation becomes stale after `max(45 seconds, 3 × sample interval)`. Each integration also carries its own timestamp; a host's online status does not imply every collector is healthy. Service-file exports retain their existing 120-second freshness allowance. Histories show averaged buckets and retained peaks, with at most about 600 points per requested window. Older snapshots and history are pruned every minute, including inactive/revoked nodes; enrollment metadata and access audit records remain.
+An observation becomes stale after `max(45 seconds, 3 × sample interval)`. Each integration also carries its own timestamp; a host's online status does not imply every collector is healthy. Service-file exports retain their existing 120-second freshness allowance. Histories show averaged buckets and retained peaks, with at most about 600 points per requested window. Older snapshots and history are pruned every minute, including inactive/revoked nodes; enrollment metadata and access audit records remain. Pulse rollups follow `OPSDECK_TREND_RETENTION_DAYS` instead. The first start of this release builds them once from the retained raw samples; a server rolled back and forward again misses rollups for samples ingested in between.
 
 ## Alerts, maintenance, and monitoring
 

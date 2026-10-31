@@ -26,6 +26,7 @@ class Settings:
     db: str = field(default_factory=lambda: os.getenv("OPSDECK_DB", "./data/opsdeck.sqlite"))
     interval: int = field(default_factory=lambda: max(5, int(os.getenv("OPSDECK_SAMPLE_SECONDS", "10"))))
     retention: int = field(default_factory=lambda: max(1, int(os.getenv("OPSDECK_RETENTION_DAYS", "30"))))
+    trend_retention: int = field(default_factory=lambda: max(1, int(os.getenv("OPSDECK_TREND_RETENTION_DAYS", "366"))))
     actions: bool = field(default_factory=lambda: os.getenv("OPSDECK_ACTIONS", "false").lower() == "true")
     operations: bool = field(default_factory=lambda: os.getenv("OPSDECK_OPERATIONS", "false").lower() == "true")
     runner_control_socket: str = field(default_factory=lambda: os.getenv("OPSDECK_RUNNER_CONTROL_SOCKET", ""))

@@ -335,8 +335,44 @@ def test_pulse_buckets_averages_with_null_gaps(app, monkeypatch):
         assert client.get("/api/fleet/pulse").status_code == 401
         default = client.get("/api/fleet/pulse", headers=OPERATOR).json()
         assert default["bucket_seconds"] == 60 and len(default["nodes"][a["id"]]["cpu"]) == 60
-        for query in ("minutes=4", "minutes=1441", "buckets=9", "buckets=121"):
+        assert client.get("/api/fleet/pulse?minutes=525600", headers=OPERATOR).status_code == 200
+        for query in ("minutes=4", "minutes=525601", "buckets=9", "buckets=121"):
             assert client.get("/api/fleet/pulse?" + query, headers=OPERATOR).status_code == 422
+
+
+def test_long_pulse_windows_use_backfilled_ingested_and_pruned_rollups(app, monkeypatch):
+    from backend.fleet import Fleet, ROLLUP_SECONDS
+    fleet = app.state.fleet
+    node = fleet.enroll("a", "c1")
+    monkeypatch.setattr(time, "time", lambda: NOW)
+    start = fleet.pulse(10080, 60)["start"]
+    put_samples(fleet, node["id"], [(start + 100, {"cpu": 10, "memory": 40}), (start + 200, {"cpu": 30, "memory": None})])
+    # A database from the previous release has raw samples and no rollups; startup backfills them once.
+    with fleet.connect() as db:
+        db.execute("DROP TABLE fleet_rollups")
+    fleet = Fleet(fleet.path)
+    Fleet(fleet.path)
+    week = fleet.pulse(10080, 60)
+    assert week["bucket_seconds"] == 10080 and len(week["nodes"][node["id"]]["cpu"]) == 60
+    assert week["nodes"][node["id"]]["cpu"][0] == 20.0 and week["nodes"][node["id"]]["memory"][0] == 40.0
+    sample = Telemetry.model_validate(envelope(50, NOW - 5))
+    credential = fleet.credential(node["token"])
+    fleet.ingest(credential, sample, 30)
+    fleet.ingest(credential, sample, 30)
+    with fleet.connect() as db:
+        assert db.execute("SELECT cpu_sum,cpu_n,gpu_n FROM fleet_rollups WHERE bucket=?", (int((NOW - 5) // ROLLUP_SECONDS),)).fetchone() == (50, 1, 0)
+    week = fleet.pulse(10080, 60)["nodes"][node["id"]]
+    assert (week["cpu"][-1], week["memory"][-1], week["gpu"]) == (50.0, 50.0, [None] * 60)
+    year = fleet.pulse(525600, 60)["nodes"][node["id"]]["cpu"]
+    assert year[-1] == 50.0 and 20.0 in year
+    # Rollups follow the longer trend retention, so long windows outlive raw samples.
+    monkeypatch.setattr(time, "time", lambda: NOW + 2 * 86400)
+    fleet.prune(1, 366)
+    with fleet.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM fleet_samples").fetchone()[0] == 0
+    assert 20.0 in fleet.pulse(525600, 60)["nodes"][node["id"]]["cpu"]
+    fleet.prune(1, 1)
+    assert fleet.pulse(525600, 60)["nodes"][node["id"]]["cpu"] == [None] * 60
 
 
 def test_fleet_history_averages_hosts_not_samples_and_filters_cluster(app, monkeypatch):
