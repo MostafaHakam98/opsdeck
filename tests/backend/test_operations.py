@@ -187,7 +187,22 @@ def test_upload_persistence_discard_and_failed_archive_retention(operation_app):
     _, task = execute(client,"load_image",{"upload_id":meta["id"]})
     assert wait_job(client,task["id"])["status"] == "failed"
     assert client.post(f"/api/operations/uploads/{meta['id']}/discard",headers=headers()).status_code == 200
+    assert client.post(f"/api/operations/uploads/{meta['id']}/discard",headers=headers()).status_code == 200
     assert client.get("/api/operations/capabilities",headers=headers()).json()["uploads"] == []
+
+
+def test_discard_removes_partial_archive_but_preserves_active_job(operation_app):
+    client, app, _ = operation_app
+    identifier = "d" * 32
+    app.state.operations.artifacts.receive(identifier, {"step":"begin", "bytes":10, "sha256":"a"*64})
+    app.state.store.operation("protected", "running", {"upload_id":identifier}, create=True)
+    path = app.state.operations.upload_path(identifier)
+    assert client.post(f"/api/operations/uploads/{identifier}/discard",headers=headers()).status_code == 409
+    assert path.exists()
+    app.state.store.operation("protected", "failed", {"upload_id":identifier})
+    assert client.post(f"/api/operations/uploads/{identifier}/discard",headers=headers()).status_code == 200
+    assert not path.exists() and not path.with_suffix(".json").exists()
+    assert client.post("/api/operations/uploads/invalid/discard",headers=headers()).status_code == 400
 
 
 def test_runner_control_revision_and_audit(tmp_path):
