@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import docker
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -28,6 +29,16 @@ def test_readiness_reports_missing_tags_and_never_returns_runtime_secrets(tmp_pa
         assert "SAFE=fixture" not in json.dumps(ready)
         assert not ready["operations_enabled"] and ready["engine_disk_free"] is None
         assert not client.get("/api/operations/readiness?reference=missing:v1", headers=headers()).json()["present"]
+
+
+def test_readiness_handles_docker_client_connection_failure(tmp_path):
+    def unavailable():
+        raise docker.errors.DockerException("private connection details")
+    app = create_app(Settings(token=TOKEN, db=str(tmp_path/"db"), image_upload_dir=str(tmp_path/"uploads")), collect=False, operation_factory=unavailable)
+    with TestClient(app) as client:
+        response = client.get("/api/operations/readiness?reference=source:v1", headers=headers())
+        assert response.status_code == 503
+        assert response.json() == {"detail": "Docker engine is unavailable"}
 
 
 def test_chunk_retries_are_idempotent_and_import_requires_whole_archive_checksum(operation_app):
@@ -109,6 +120,9 @@ def test_fleet_copy_uses_real_agent_relay_resumes_and_verifies_layers(tmp_path, 
                 assert target_engine.tags["imported:v1"] == IMAGE
                 assert not (tmp_path/"source"/"exports"/task_id).exists()
                 assert not (tmp_path/"target"/task_id).exists()
+                assert (await operator.post(f"/api/fleet/image-transfers/{task_id}/discard", json={})).status_code == 200
+                assert (await operator.post(f"/api/fleet/image-transfers/{task_id}/discard", json={})).status_code == 200
+                assert manager.store.operation_by_id(task_id)["staging_discarded"]
                 # Repeated import requests return the existing result, never replay Docker load.
                 repeated = target.state.operations.queue_transfer(task_id, "load_image", {"upload_id": task_id, "reference": "imported:v1"})
                 assert repeated["status"] == "success" and target_engine.loads == 1

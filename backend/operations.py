@@ -207,12 +207,12 @@ class Operations:
 
     def discard_upload(self, identifier):
         self.require_enabled()
-        with self.lock:
-            if any(job.get("upload_id") == identifier and job["status"] in ("queued", "running") for job in self.store.operations()):
+        path = self.upload_path(identifier)
+        with self.lock, self.upload_lock:
+            if any(job.get("upload_id") == identifier and job["status"] in ("queued", "running") for job in self.store.operations(200)):
                 raise HTTPException(409, "That archive is in use by a queued or running task")
-            path, _ = self.upload(identifier)
-            path.unlink()
-            path.with_suffix(".json").unlink()
+            path.unlink(missing_ok=True)
+            path.with_suffix(".json").unlink(missing_ok=True)
         self.store.event("action", "info", "Archive discarded", "Unused upload " + identifier)
         return {"message": "Staged archive removed"}
 
@@ -370,8 +370,9 @@ class Operations:
         result = {"reference": reference, "present": False, "operations_enabled": self.settings.operations,
                   "staging_free": shutil.disk_usage(self.artifacts.root).free, "archive_limit": self.artifacts.limit,
                   "engine_disk_free": None, "runner": {"available": False}}
-        client = self.client_factory()
+        client = None
         try:
+            client = self.client_factory()
             info = client.info()
             result.update(engine_architecture=info.get("Architecture"), engine_os=info.get("OSType"), engine_available=True)
             root = info.get("DockerRootDir")
@@ -390,7 +391,8 @@ class Operations:
         except docker.errors.DockerException:
             raise HTTPException(503, "Docker engine is unavailable") from None
         finally:
-            client.close()
+            if client is not None:
+                client.close()
         try:
             result["runner"] = {"available": True, **self.runner.call("state")}
         except HTTPException as exc:
