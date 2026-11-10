@@ -55,7 +55,7 @@ test-e2e: build ## Run Chromium browser checks (install it first with Playwright
 	npm run test:e2e --prefix frontend
 
 check: test build ## Run tests, production build, shell syntax, and Python compilation
-	bash -n scripts/runner/*.sh deploy/native/*.sh deploy/offline/*.sh
+	bash -n scripts/runner/*.sh deploy/*.sh deploy/native/*.sh deploy/offline/*.sh
 	$(PYTHON) -m compileall -q backend deploy scripts
 
 format: ## Format frontend source and configuration

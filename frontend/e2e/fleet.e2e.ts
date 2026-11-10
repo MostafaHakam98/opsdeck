@@ -372,6 +372,8 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
   page,
   request,
 }) => {
+  // The walkthrough waits for one fleet poll (10 s) to show the connection.
+  test.setTimeout(60000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const name = `runner-${randomUUID().slice(0, 8)}`;
@@ -389,12 +391,22 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
   await page.getByLabel("Host name", { exact: true }).fill(name);
   await page.getByLabel("Cluster or network").fill(cluster);
   await page.getByLabel("Access address (optional)").fill("10.20.30.40");
+  // The install command is secret-free, so it is shown before the credential exists.
+  const command = page.getByLabel("Install command");
+  await expect(command).toContainText("/deploy/bootstrap-agent.sh");
+  await expect(command).toContainText("--method docker");
   await page.getByRole("button", { name: "Create agent credential" }).click();
-  const modal = page.getByRole("dialog");
-  await expect(modal).toBeVisible();
-  const config = await modal.locator("pre").first().textContent();
-  const token = config!.split("OPSDECK_AGENT_TOKEN=")[1].trim();
+  const credentialField = page.getByLabel("Agent credential");
+  await expect(credentialField).toHaveAttribute("type", "password");
+  const token = await credentialField.inputValue();
   expect(token.length).toBeGreaterThan(64);
+  expect(await command.textContent()).not.toContain(token);
+  await page.getByRole("button", { name: "Native service" }).click();
+  await expect(command).toContainText("--method native");
+  await page.getByRole("button", { name: "Show credential" }).click();
+  await expect(credentialField).toHaveAttribute("type", "text");
+  await expect(page.getByText(/Waiting for the agent/)).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   const id = token.split(".")[0];
   const stamp = Date.now() / 1000;
   const values = {
@@ -453,7 +465,13 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
     },
   });
   expect(response.status()).toBe(200);
-  await page.getByRole("button", { name: "Saved, view host" }).click();
+  // Step 3 notices the first sample and names the host and its address.
+  await expect(
+    page.getByRole("status").filter({ hasText: "Connected as" }),
+  ).toContainText("build.local at 10.20.30.40", { timeout: 15000 });
+  await page.getByRole("button", { name: "Open host", exact: true }).click();
+  // Park the pointer so the history chart under it shows no hover tooltip.
+  await page.mouse.move(0, 0);
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
   await expect(page.getByText("37.0%", { exact: true })).toBeVisible();
   // The operator-set address wins over the one the agent reports.
@@ -483,9 +501,17 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
   ).toBeVisible();
   await page.getByLabel("Confirm host name").fill(name);
   await page.getByRole("button", { name: "Rotate credential" }).click();
+  const modal = page.getByRole("dialog");
   await expect(modal).toBeVisible();
-  const rotatedConfig = await modal.locator("pre").first().textContent();
-  const rotated = rotatedConfig!.split("OPSDECK_AGENT_TOKEN=")[1].trim();
+  await expect(
+    modal.getByRole("heading", {
+      name: `Reconnect ${name} with its new credential`,
+    }),
+  ).toBeVisible();
+  await expect(modal.getByLabel("Install command")).toContainText(
+    "bootstrap-agent.sh",
+  );
+  const rotated = await modal.getByLabel("Agent credential").inputValue();
   expect(rotated).not.toBe(token);
   expect(
     (
@@ -495,7 +521,7 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
       })
     ).status(),
   ).toBe(401);
-  await page.getByRole("button", { name: "Saved, view host" }).click();
+  await page.getByRole("button", { name: "Done, view host" }).click();
   await page.getByLabel("Confirm host name").fill(name);
   await page.getByRole("button", { name: "Revoke agent" }).click();
   await expect(
@@ -512,7 +538,22 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
   ).toBe(200);
   await page.getByRole("button", { name: "Back to hosts" }).click();
   await page.getByLabel("Search hosts").fill(name);
-  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  const hostName = page.getByRole("button", { name, exact: true });
+  await expect(hostName).toBeVisible();
+  // Hovering a host's name shows how to reach it, on host cards and pulse rows.
+  await hostName.hover();
+  const tip = page.getByRole("tooltip");
+  await expect(tip).toContainText("10.20.30.40");
+  await expect(tip).toContainText("Access address set in Host settings");
+  await expect(tip).toContainText("Also 192.0.2.10");
+  await page.mouse.move(0, 0);
+  await expect(tip).toHaveCount(0);
+  await page
+    .locator(".pulse-row", { hasText: name })
+    .locator(".host-hover")
+    .hover();
+  await expect(page.getByRole("tooltip")).toContainText("10.20.30.40");
+  await page.mouse.move(0, 0);
   await page
     .getByRole("button", { name: "All clusters", exact: false })
     .click();

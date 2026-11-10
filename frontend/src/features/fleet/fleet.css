@@ -507,6 +507,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pulse-name .host-hover > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pulse-row:hover .pulse-name > span {
   color: var(--accent-text);
   text-decoration: underline;
@@ -609,6 +614,53 @@
 }
 .pulse-tooltip span,
 .pulse-tooltip small {
+  color: var(--text-muted);
+}
+/* Host name hover: how to reach the host. */
+.host-hover {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+.host-tooltip {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  gap: 3px;
+  width: max-content;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
+.host-tooltip[data-placement="above"] {
+  transform: translateY(-100%);
+}
+.host-tooltip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.host-tooltip-address {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.host-tooltip-address code {
+  padding: 0;
+  background: none;
+  color: var(--text);
+}
+.host-tooltip small {
   color: var(--text-muted);
 }
 
@@ -1579,7 +1631,8 @@ button.fleet-alert:hover {
   min-height: 76px;
   font-family: var(--font-body);
 }
-.fleet-hint > span:last-child {
+/* Only a trailing counter ("55 / 500") stays on one line; a lone hint wraps. */
+.fleet-hint > span + span:last-child {
   white-space: nowrap;
 }
 .fleet-hint {
@@ -1792,6 +1845,167 @@ button.fleet-alert:hover {
   line-height: 1.65;
   color: var(--text-muted);
   margin-bottom: 22px;
+}
+/* Enroll host walkthrough and the rotate dialog share these steps. */
+.enroll-steps {
+  display: grid;
+  gap: 0;
+  max-width: 820px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+}
+.enroll-step {
+  position: relative;
+  padding: 0 0 26px 44px;
+}
+/* The rail joining step numbers. */
+.enroll-step::before {
+  content: "";
+  position: absolute;
+  top: 30px;
+  bottom: 4px;
+  left: 13px;
+  width: 2px;
+  background: var(--border);
+}
+.enroll-step:last-child::before {
+  display: none;
+}
+.enroll-step h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+  margin: 0 0 10px -44px;
+  font-size: 16px;
+}
+.enroll-step-number {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.enroll-step[data-state="current"] .enroll-step-number {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.enroll-step[data-state="done"] .enroll-step-number {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+}
+.enroll-step[data-state="upcoming"] .enroll-step-body {
+  opacity: 0.62;
+}
+.enroll-step-body {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.enroll-step-body > * {
+  margin: 0;
+}
+.enroll-step-body > p {
+  max-width: 68ch;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.enroll-step-body > .fleet-hint,
+.enroll-step-body > .enroll-command,
+.enroll-step-body > .enroll-credential {
+  justify-self: stretch;
+}
+.enroll-step-body h3 {
+  margin-top: 8px;
+  font-size: 14px;
+}
+.enroll-step .fleet-enroll {
+  width: 100%;
+}
+.fleet-enroll fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.enroll-command {
+  overflow-x: auto;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-2);
+  font-size: 12.5px;
+  line-height: 1.6;
+  /* Wrap the long URL on screen; Copy command still copies it exactly. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.enroll-actions,
+.enroll-finish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+.enroll-finish {
+  justify-content: flex-end;
+  max-width: 820px;
+}
+.enroll-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.enroll-credential {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  max-width: 620px;
+}
+.enroll-credential input {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+.enroll-waiting,
+.enroll-connected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.enroll-pulse {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: enroll-pulse 1.6s ease-in-out infinite;
+}
+@keyframes enroll-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .enroll-pulse {
+    animation: none;
+  }
+}
+.enroll-dialog {
+  max-width: 820px;
+}
+.enroll-dialog .enroll-steps {
+  margin-top: 18px;
 }
 .fleet-dialog-backdrop {
   position: fixed;

@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Section, Segmented, StatusDot } from "./FleetComponents";
+import { HostHover, Section, Segmented, StatusDot } from "./FleetComponents";
 import {
   bucketLabel,
   bucketRange,
@@ -130,7 +130,9 @@ const PulseRow = memo(function PulseRow({
     >
       <span className="pulse-name">
         <StatusDot value={state} />
-        <span>{node.name}</span>
+        <HostHover node={node}>
+          <span>{node.name}</span>
+        </HostHover>
       </span>
       <span className="pulse-cells" aria-hidden="true">
         {values.map((value, i) => (

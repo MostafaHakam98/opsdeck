@@ -29,6 +29,7 @@ import { LoadingState, RequestProgress } from "../../components/LoadingState";
 import { ShortcutHelp, openShortcutHelp } from "../../components/ShortcutHelp";
 import { useHotkey } from "../../lib/useHotkey";
 import { AgentCredential } from "./AgentCredential";
+import { EnrollWalkthrough } from "./EnrollWalkthrough";
 import { FleetOverview } from "./FleetOverview";
 import { FleetAudit } from "./FleetAudit";
 import { DangerZone, HostSettings } from "./HostSettings";
@@ -102,9 +103,8 @@ export function FleetApp({
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState(false);
   const [credential, setCredential] = useState<Credential | null>(null);
-  const [name, setName] = useState("");
-  const [newCluster, setNewCluster] = useState("");
-  const [newAddress, setNewAddress] = useState("");
+  // Remounts the walkthrough with an empty form for the next host.
+  const [enrollRound, setEnrollRound] = useState(0);
   const [confirm, setConfirm] = useState("");
   const [paused, setPaused] = useState(
     () => readStored(session, PAUSE_KEY, "") === "1",
@@ -275,13 +275,19 @@ export function FleetApp({
       "text/csv",
     );
   }
-  async function mutate(path: string, values: unknown, reveal: boolean) {
+  async function mutate(
+    path: string,
+    values: unknown,
+    reveal: boolean,
+    context: Partial<Credential> = {},
+  ) {
     setBusy(true);
     setActionError("");
     try {
       const result = await api<Credential>(path, token, values);
       if (reveal) {
-        setCredential(result);
+        // A rotation returns only the id and token; keep the host's labels.
+        setCredential({ ...context, ...result });
       }
       setConfirm("");
       setRefresh((v) => v + 1);
@@ -327,6 +333,16 @@ export function FleetApp({
     );
   }
   const selectedNode = nodes.find((n) => n.id === selected);
+  // The host whose one-time credential is on screen, as the fleet reports it now.
+  const enrolling = credential
+    ? nodes.find((n) => n.id === credential.id)
+    : undefined;
+  function finishCredential() {
+    if (!credential) return;
+    setCredential(null);
+    setCluster("");
+    selectNode(credential.id);
+  }
   const commands: Command[] = [
     {
       id: "fleet",
@@ -667,7 +683,10 @@ export function FleetApp({
                     onConfirm={setConfirm}
                     busy={busy}
                     onRotate={() =>
-                      void mutate(`fleet/nodes/${selected}/rotate`, {}, true)
+                      void mutate(`fleet/nodes/${selected}/rotate`, {}, true, {
+                        name: detail.node.name,
+                        cluster: detail.node.cluster,
+                      })
                     }
                     onRevoke={() =>
                       void mutate(`fleet/nodes/${selected}/revoke`, {}, false)
@@ -678,75 +697,20 @@ export function FleetApp({
             </>
           )}
           {view === "enroll" && (
-            <>
-              <div className="fleet-title">
-                <div>
-                  <h1>Enroll a runner host</h1>
-                  <p>
-                    One agent per host. Several runners can share that host.
-                  </p>
-                </div>
-              </div>
-              <form
-                className="fleet-enroll"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void mutate(
-                    "fleet/nodes",
-                    { name, cluster: newCluster, address: newAddress.trim() },
-                    true,
-                  );
-                }}
-              >
-                <label>
-                  Host name
-                  <input
-                    required
-                    maxLength={120}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="build-runner-01"
-                  />
-                </label>
-                <label>
-                  Cluster or network
-                  <input
-                    required
-                    maxLength={120}
-                    list="fleet-enroll-clusters"
-                    value={newCluster}
-                    onChange={(e) => setNewCluster(e.target.value)}
-                    placeholder="Cairo build cluster"
-                  />
-                  <datalist id="fleet-enroll-clusters">
-                    {clusters.map((c) => (
-                      <option key={c} value={c} />
-                    ))}
-                  </datalist>
-                </label>
-                <label>
-                  Access address (optional)
-                  <input
-                    maxLength={253}
-                    value={newAddress}
-                    onChange={(e) => setNewAddress(e.target.value)}
-                    placeholder="172.16.27.118 or runner-01.example.com"
-                    spellCheck={false}
-                    autoCapitalize="off"
-                  />
-                </label>
-                <p>
-                  The agent needs outbound HTTPS access to this server. Its
-                  credential is limited to sending this host's telemetry. Next,
-                  you save the credential in <code>.env.agent</code> on the host
-                  and run <code>make agent-install</code>. Without an access
-                  address, the address the agent reports is shown.
-                </p>
-                <button className="primary" disabled={busy || !!credential}>
-                  {busy ? "Enrolling..." : "Create agent credential"}
-                </button>
-              </form>
-            </>
+            <EnrollWalkthrough
+              key={enrollRound}
+              clusters={clusters}
+              busy={busy}
+              credential={credential}
+              node={enrolling}
+              version={fleet?.version}
+              onCreate={(values) => void mutate("fleet/nodes", values, true)}
+              onOpenHost={finishCredential}
+              onEnrollAnother={() => {
+                setCredential(null);
+                setEnrollRound((v) => v + 1);
+              }}
+            />
           )}
           {view === "audit" && (
             <FleetAudit
@@ -763,15 +727,15 @@ export function FleetApp({
       {/* Keep overlays and their "Sign out" away from the one-time credential. */}
       {!credential && <CommandPalette commands={commands} />}
       {!credential && <ShortcutHelp shortcuts={SHORTCUTS} />}
-      {credential && (
+      {/* Enroll host shows its credential inline; elsewhere (rotation, or
+          leaving the walkthrough early) the one-time credential stays in a dialog. */}
+      {credential && view !== "enroll" && (
         <AgentCredential
           key={credential.token}
           credential={credential}
-          onSaved={() => {
-            setCredential(null);
-            setCluster("");
-            selectNode(credential.id);
-          }}
+          version={fleet?.version}
+          node={enrolling}
+          onSaved={finishCredential}
         />
       )}
     </div>

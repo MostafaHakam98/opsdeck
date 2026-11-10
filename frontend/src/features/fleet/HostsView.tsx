@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import {
   HostAddress,
+  HostHover,
   MiniBar,
   Section,
   Segmented,
@@ -242,13 +243,15 @@ function HostCard({
   return (
     <article className="host-card" data-state={state}>
       <header>
-        <button
-          type="button"
-          className="fleet-host-link"
-          onClick={() => onOpen(node.id)}
-        >
-          {node.name}
-        </button>
+        <HostHover node={node}>
+          <button
+            type="button"
+            className="fleet-host-link"
+            onClick={() => onOpen(node.id)}
+          >
+            {node.name}
+          </button>
+        </HostHover>
         <Status value={state} />
       </header>
       <p className="host-card-meta">
@@ -330,14 +333,16 @@ function HostTable(props: HostsViewProps) {
           {props.nodes.map((node) => (
             <tr key={node.id}>
               <td>
-                <button
-                  type="button"
-                  className="fleet-host-link"
-                  onClick={() => props.onOpen(node.id)}
-                >
-                  {node.name}
-                  <ChevronRight size={14} aria-hidden="true" />
-                </button>
+                <HostHover node={node}>
+                  <button
+                    type="button"
+                    className="fleet-host-link"
+                    onClick={() => props.onOpen(node.id)}
+                  >
+                    {node.name}
+                    <ChevronRight size={14} aria-hidden="true" />
+                  </button>
+                </HostHover>
                 <small>{node.hostname || "Awaiting agent"}</small>
                 <small>
                   <HostAddress node={node} />

@@ -12,7 +12,9 @@ For the Docker path below, use Linux, Docker Engine, Compose 2.30+, GNU Make, Py
 
 ## Step 1 — create this machine's fleet identity
 
-Open **Enroll host** on the central dashboard. Enter a recognizable host name and cluster/network, optionally the address people use to reach the machine, then click **Create agent credential**. Save the displayed server URL and host credential once in a protected place.
+Open **Enroll host** on the central dashboard. Enter a recognizable host name and cluster/network, optionally the address people use to reach the machine, then click **Create agent credential**. The walkthrough shows the credential once.
+
+For an agent-only install, follow the walkthrough's next step: copy the one-line command, run it on the machine, and paste the credential when asked. It performs the agent parts of Steps 2 and 3 in a separate `~/opsdeck-agent` checkout. See [Fleet deployment](fleet.md#enroll-each-runner-host). For the full workspace below, select **Copy credential** and keep the server URL and host credential in a protected place.
 
 Use the central dashboard’s **Enroll host** form; one credential belongs to one machine.
 
