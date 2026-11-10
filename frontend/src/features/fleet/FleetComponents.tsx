@@ -1,5 +1,14 @@
-import React, { useRef } from "react";
-import { heatColor, percentText, sparklinePath } from "./fleetModel";
+import React, { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Check, Copy } from "lucide-react";
+import {
+  accessAddress,
+  addressSource,
+  heatColor,
+  percentText,
+  sparklinePath,
+} from "./fleetModel";
+import type { Node } from "./types";
 
 export function Status({ value, pill }: { value: string; pill?: boolean }) {
   return (
@@ -28,6 +37,134 @@ export function NotReported({
   children?: React.ReactNode;
 }) {
   return <span className="fleet-na">{children}</span>;
+}
+/**
+ * Where to reach the host, with a copy button. The title says whether an
+ * operator set it or the agent reported it.
+ */
+export function HostAddress({
+  node,
+  empty = "No address",
+}: {
+  node: Node;
+  empty?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const address = accessAddress(node);
+  if (!address) return <NotReported>{empty}</NotReported>;
+  const reported = node.addresses?.find((a) => a.address === address);
+  const source =
+    addressSource(node) === "operator"
+      ? "Set by an operator"
+      : `Reported by the agent${reported?.interface ? ` on ${reported.interface}` : ""}`;
+  return (
+    <span className="fleet-address" title={source}>
+      <code>{address}</code>
+      <button
+        type="button"
+        className="fleet-icon-button"
+        aria-label={copied ? `Copied ${address}` : `Copy address ${address}`}
+        onClick={async (event) => {
+          event.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(address);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          } catch {
+            setCopied(false);
+          }
+        }}
+      >
+        {copied ? (
+          <Check size={12} aria-hidden="true" />
+        ) : (
+          <Copy size={12} aria-hidden="true" />
+        )}
+      </button>
+    </span>
+  );
+}
+/** Why the host shows this address, or why it shows none. */
+export function addressNote(node: Node) {
+  const source = addressSource(node);
+  if (source === "operator") return "Access address set in Host settings";
+  if (source === "agent") {
+    const primary = node.addresses!.find(
+      (a) => a.address === accessAddress(node),
+    );
+    return `Reported by the agent${primary?.interface ? ` on ${primary.interface}` : ""}`;
+  }
+  return node.status === "waiting"
+    ? "The agent has not connected yet"
+    : "This agent reports no address yet. Update the agent, or set an access address in Host settings.";
+}
+/**
+ * Shows how to reach a host while its name is hovered or focused. The card is
+ * portalled to the body and fixed to the viewport, so neither scrolling
+ * containers nor the pulse wall's sticky name column can clip or cover it; it
+ * closes on scroll and resize.
+ */
+export function HostHover({
+  node,
+  children,
+}: {
+  node: Node;
+  children: React.ReactElement<{ "aria-describedby"?: string }>;
+}) {
+  const id = useId();
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  useEffect(() => {
+    if (!anchor) return;
+    const hide = () => setAnchor(null);
+    window.addEventListener("scroll", hide, { capture: true, passive: true });
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, { capture: true });
+      window.removeEventListener("resize", hide);
+    };
+  }, [anchor]);
+  const address = accessAddress(node);
+  const others = (node.addresses || [])
+    .map((a) => a.address)
+    .filter((a) => a !== address);
+  const below = !anchor || anchor.bottom + 150 < window.innerHeight;
+  return (
+    <span
+      className="host-hover"
+      onPointerEnter={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
+      onPointerLeave={() => setAnchor(null)}
+      onFocus={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
+      onBlur={() => setAnchor(null)}
+    >
+      {React.cloneElement(children, {
+        "aria-describedby": anchor ? id : undefined,
+      })}
+      {anchor &&
+        createPortal(
+          <span
+            id={id}
+            role="tooltip"
+            className="host-tooltip"
+            data-placement={below ? "below" : "above"}
+            style={{
+              left: Math.max(8, Math.min(window.innerWidth - 288, anchor.left)),
+              top: below ? anchor.bottom + 6 : anchor.top - 6,
+            }}
+          >
+            <strong>{node.name}</strong>
+            <span className="host-tooltip-address">
+              {address ? <code>{address}</code> : "No address yet"}
+            </span>
+            <small>{addressNote(node)}</small>
+            {others.length > 0 && <small>Also {others.join(", ")}</small>}
+            <small>
+              {[node.hostname, node.cluster].filter(Boolean).join(" · ")}
+            </small>
+          </span>,
+          document.body,
+        )}
+    </span>
+  );
 }
 /**
  * Data table. `numeric` names right-aligned columns; an empty body renders one

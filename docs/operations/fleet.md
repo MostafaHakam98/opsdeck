@@ -84,12 +84,17 @@ This binds to `http://127.0.0.1:8080` by default. HTTP agent delivery is accepte
 
 ## Enroll each runner host
 
-1. Open **Enroll host** in the central dashboard.
-2. Enter a host name and its cluster/network name.
-3. Save the credential shown once. It belongs to this host only.
-4. On that runner host, create a private `.env.agent` using the displayed server URL and credential. The full template is [`.env.agent.example`](../../.env.agent.example).
+**Enroll host** (sidebar, or the button on the fleet page) is a three-step walkthrough:
 
-Install just the backend dependencies on a native runner; Node.js and a frontend build are unnecessary:
+1. **Name the host.** Enter a host name, its cluster/network name, and optionally the access address people use to reach it, then select **Create agent credential**.
+2. **Run the installer on the machine.** Choose **Docker** or **Native service**, select **Copy command**, and paste it into a shell on that host as the account that should run the agent. When the installer asks, paste the credential from the walkthrough (**Copy credential**); the terminal input stays hidden. The credential is shown once and belongs to this host only.
+3. **Wait for the first sample.** The step turns green with the host's name and address once the agent's first sample arrives, then **Open host** goes to it.
+
+The command contains no secret. It downloads [`deploy/bootstrap-agent.sh`](../../deploy/bootstrap-agent.sh) from `raw.githubusercontent.com/MostafaHakam98/opsdeck` at the commit the server runs (`devel` when the server reports no commit), so the downloaded script cannot change after review; **Read the script on GitHub** opens that exact version. The script checks prerequisites first, then clones the repository into `~/opsdeck-agent` (a separate checkout, so an existing OpsDeck workspace checkout is not moved), checks out the same commit, writes `.env.agent` from [`.env.agent.example`](../../.env.agent.example) with mode 600 using `python3 -m deploy.configure --agent` (the credential travels on stdin, never as an argument), and runs `COMPOSE_PROJECT_NAME=opsdeck-agent make docker-agent-up` or `make agent-install`. The written file keeps the template's defaults, including runner metrics on `127.0.0.1:9252` and the `docker.service,gitlab-runner.service` units; edit it on hosts without them. For an unattended install, set the `OPSDECK_AGENT_CREDENTIAL` environment variable instead of answering the prompt.
+
+For a host enrolled earlier, **Rotate credential** in **Agent access** shows the same two install steps with a new credential. Rotation disconnects the running agent until the installer is rerun (it updates the existing checkout) or `.env.agent` is edited.
+
+To configure by hand instead, copy the credential, then on the host run `printf '%s\n' '<credential>' | python3 -m deploy.configure --agent --server <server URL>` in a checkout, or edit a private `.env.agent` from the template. Install just the backend dependencies on a native runner; Node.js and a frontend build are unnecessary:
 
 ```bash
 python3 -m venv .venv
@@ -191,7 +196,7 @@ The fleet overview derives alerts from each host's latest state on every request
 
 Load and collector rules apply only to online hosts, because an offline or stale host's readings are old. Waiting and revoked hosts raise nothing. Alerts are sorted critical first, then by host name. The overview `summary` counts hosts per status, hosts in maintenance, clusters, and alerts, and averages CPU, memory, and GPU over online hosts that report a value.
 
-Put a host into maintenance before planned work. Maintenance silences all of its alerts without hiding the host or its status. Name, cluster, notes (up to 500 characters), and maintenance are changed with `POST /api/fleet/nodes/{id}/settings`; each change is recorded in **Fleet audit** ("Host settings changed", "Maintenance started", "Maintenance ended"). Renaming or moving a host does not change its agent credential.
+Put a host into maintenance before planned work. Maintenance silences all of its alerts without hiding the host or its status. Name, cluster, notes (up to 500 characters), access address, and maintenance are changed with `POST /api/fleet/nodes/{id}/settings`; each change is recorded in **Fleet audit** ("Host settings changed", "Maintenance started", "Maintenance ended"). Renaming or moving a host does not change its agent credential.
 
 Uncheck collectors a host does not run under **Host settings > Monitored collectors** (`ignored_sources`: any of `docker`, `gpu`, `runner`, `services`). Ignored collectors are shown as "not monitored" and raise no alerts. See "Agent collector shows unavailable" in the [troubleshooting guide](../guides/troubleshooting.md) for the common Docker timeout, runner listener, and systemd bus causes.
 

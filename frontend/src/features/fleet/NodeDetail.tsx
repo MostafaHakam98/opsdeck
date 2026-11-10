@@ -12,6 +12,7 @@ import {
 import { bytes, pct } from "../../lib/api";
 import { records, object, number, age } from "./format";
 import {
+  HostAddress,
   NotReported,
   Section,
   Segmented,
@@ -263,7 +264,7 @@ export function NodeDetail({
       false,
       <Section title="Network">
         <Table
-          headings={["Interface", "Link", "Receive", "Send"]}
+          headings={["Interface", "Link", "Addresses", "Receive", "Send"]}
           numeric={["Receive", "Send"]}
         >
           {network.map((v, i) => (
@@ -274,6 +275,11 @@ export function NodeDetail({
                   <StatusDot value={v.up ? "online" : "waiting"} />
                   {v.up ? "Up" : "Down"}
                 </span>
+              </td>
+              <td className="fleet-muted-cell">
+                {Array.isArray(v.addresses) && v.addresses.length
+                  ? v.addresses.join(", ")
+                  : "None"}
               </td>
               <td className="num">{amount(v.rx_bytes_s, rate)}</td>
               <td className="num">{amount(v.tx_bytes_s, rate)}</td>
@@ -467,6 +473,24 @@ export function NodeDetail({
           <dt>Collection scope</dt>
           <dd>{node.scope || <NotReported />}</dd>
         </div>
+        <div>
+          <dt>Address</dt>
+          <dd>
+            <HostAddress node={node} empty="Not reported" />
+          </dd>
+        </div>
+        {(node.addresses?.length ?? 0) > 1 && (
+          <div>
+            <dt>Reported addresses</dt>
+            <dd className="fleet-address-list">
+              {node.addresses!.map((a) => (
+                <code key={a.address} title={a.interface || undefined}>
+                  {a.address}
+                </code>
+              ))}
+            </dd>
+          </div>
+        )}
       </dl>
       {node.notes && <p className="fleet-node-notes">{node.notes}</p>}
       {alerts.length > 0 && (

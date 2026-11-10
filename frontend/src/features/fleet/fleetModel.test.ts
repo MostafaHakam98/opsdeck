@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  accessAddress,
+  addressSource,
   backoffDelay,
   bucketLabel,
   csvCell,
@@ -14,6 +16,7 @@ import {
   heatColor,
   heatLevel,
   hostsCsv,
+  matchesQuery,
   pulseRowLabel,
   pulseStats,
   pulseTime,
@@ -24,6 +27,46 @@ import {
   toCsv,
 } from "./fleetModel";
 import type { Fleet, Node } from "./types";
+
+describe("access address", () => {
+  const reported = [
+    { address: "192.168.1.9", interface: "wlan0", primary: false },
+    { address: "172.16.27.118", interface: "eno1", primary: true },
+  ];
+  it("prefers the operator address, then the primary reported one", () => {
+    expect(
+      accessAddress(
+        node({ id: "a", address: "nuke.lab", addresses: reported }),
+      ),
+    ).toBe("nuke.lab");
+    expect(addressSource(node({ id: "a", address: "nuke.lab" }))).toBe(
+      "operator",
+    );
+    expect(accessAddress(node({ id: "a", addresses: reported }))).toBe(
+      "172.16.27.118",
+    );
+    expect(addressSource(node({ id: "a", addresses: reported }))).toBe("agent");
+    expect(accessAddress(node({ id: "a", addresses: [reported[0]] }))).toBe(
+      "192.168.1.9",
+    );
+  });
+  it("is unknown for older agents and unset addresses", () => {
+    expect(accessAddress(node({ id: "a" }))).toBeNull();
+    expect(
+      accessAddress(node({ id: "a", address: "", addresses: [] })),
+    ).toBeNull();
+    expect(addressSource(node({ id: "a" }))).toBeNull();
+  });
+  it("is searchable", () => {
+    expect(
+      matchesQuery(node({ id: "a", addresses: reported }), "172.16.27"),
+    ).toBe(true);
+    expect(matchesQuery(node({ id: "a", address: "10.9.9.9" }), "10.9.9")).toBe(
+      true,
+    );
+    expect(matchesQuery(node({ id: "a" }), "172.16")).toBe(false);
+  });
+});
 
 function node(overrides: Partial<Node> & { id: string }): Node {
   return {
@@ -281,7 +324,19 @@ describe("export and timing", () => {
       node({ id: "a", notes: "rack 2", metrics: { cpu: 12.345 } }),
     ]);
     expect(csv.split("\r\n")[1]).toMatch(
-      /^a,a\.local,alpha,online,no,12\.3,,,,5,1970-01-01T00:16:40\.000Z,rack 2$/,
+      /^a,a\.local,alpha,online,no,12\.3,,,,5,1970-01-01T00:16:40\.000Z,rack 2,,$/,
+    );
+    const reported = hostsCsv([
+      node({
+        id: "b",
+        addresses: [
+          { address: "10.0.0.2", interface: "eth1", primary: false },
+          { address: "10.0.0.1", interface: "eth0", primary: true },
+        ],
+      }),
+    ]);
+    expect(reported.split("\r\n")[1]).toMatch(
+      /,10\.0\.0\.1,10\.0\.0\.2 10\.0\.0\.1$/,
     );
   });
   it("backs off exponentially to one minute", () => {

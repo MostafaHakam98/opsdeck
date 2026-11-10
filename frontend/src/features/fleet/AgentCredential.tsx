@@ -1,20 +1,29 @@
-import { useEffect, useRef, useState } from "react";
-import { Copy } from "lucide-react";
-import type { Credential } from "./types";
+import { useEffect, useRef } from "react";
+import { InstallSteps } from "./InstallSteps";
+import type { Credential, Node } from "./types";
 
+const FOCUSABLE = "button, input, a[href]";
+
+/**
+ * After Rotate credential: the same install steps as Enroll host, in a dialog,
+ * because the new credential is shown once and the old agent is now cut off.
+ */
 export function AgentCredential({
   credential,
+  version,
+  node,
   onSaved,
 }: {
   credential: Credential;
+  /** Server build version; the installer checks out the same commit. */
+  version?: string;
+  node?: Node;
   onSaved: () => void;
 }) {
   const dialog = useRef<HTMLElement>(null);
-  const [copied, setCopied] = useState(false);
-  const configuration = `OPSDECK_SERVER_URL=${window.location.origin}\nOPSDECK_AGENT_TOKEN=${credential.token}`;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    dialog.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
     return () => {
       if (previous?.isConnected) previous.focus();
     };
@@ -23,17 +32,17 @@ export function AgentCredential({
     <div className="fleet-dialog-backdrop">
       <section
         ref={dialog}
-        className="fleet-dialog"
+        className="fleet-dialog enroll-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="agent-credential-title"
         onKeyDown={(event) => {
           if (event.key !== "Tab") return;
-          const buttons =
-            dialog.current?.querySelectorAll<HTMLButtonElement>("button");
-          if (!buttons?.length) return;
-          const first = buttons[0],
-            last = buttons[buttons.length - 1];
+          const items =
+            dialog.current?.querySelectorAll<HTMLElement>(FOCUSABLE);
+          if (!items?.length) return;
+          const first = items[0],
+            last = items[items.length - 1];
           if (event.shiftKey && document.activeElement === first) {
             event.preventDefault();
             last.focus();
@@ -44,52 +53,25 @@ export function AgentCredential({
           }
         }}
       >
-        <h2 id="agent-credential-title">Save this agent credential</h2>
-        <p>Shown once. Put it in the private environment file on this host.</p>
-        <pre>{configuration}</pre>
-        <ol className="fleet-steps">
-          <li>
-            In the OpsDeck checkout on the runner, save these values in a
-            private <code>.env.agent</code> file and run{" "}
-            <code>chmod 600 .env.agent</code>.
-          </li>
-          <li>
-            Install the agent as a persistent service. It validates the file and
-            starts sending telemetry:
-          </li>
+        <h2 id="agent-credential-title">
+          Reconnect {credential.name || "this host"} with its new credential
+        </h2>
+        <p>
+          The previous credential no longer works. Run the installer on the
+          machine again; it updates the existing checkout and replaces its{" "}
+          <code>.env.agent</code>.
+        </p>
+        <ol className="enroll-steps">
+          <InstallSteps
+            first={1}
+            credential={credential}
+            version={version}
+            node={node}
+          />
         </ol>
-        <pre>make agent-install</pre>
-        <p>
-          This connects fleet telemetry. To open this host’s full workspace,
-          also run its local OpsDeck API and set{" "}
-          <code>OPSDECK_WORKSPACE_URL</code> and{" "}
-          <code>OPSDECK_WORKSPACE_TOKEN</code> in <code>.env.agent</code>, then
-          restart the agent. Use one agent per machine, including machines with
-          several runners.
-        </p>
-        <p>
-          To try it in the foreground first, run{" "}
-          <code>.venv/bin/python -m backend.agent</code>. Full steps are in{" "}
-          <code>docs/operations/fleet.md</code>.
-        </p>
         <div className="fleet-actions">
-          <button
-            type="button"
-            className="secondary"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(configuration);
-                setCopied(true);
-              } catch {
-                setCopied(false);
-              }
-            }}
-          >
-            <Copy size={16} />
-            {copied ? "Copied" : "Copy configuration"}
-          </button>
           <button type="button" className="primary" onClick={onSaved}>
-            Saved, view host
+            Done, view host
           </button>
         </div>
       </section>

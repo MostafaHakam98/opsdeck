@@ -17,6 +17,7 @@ opsdeck/
 │   ├── docker/                 # Dockerfile and Compose deployment modes
 │   ├── native/                 # Native systemd installer and unit example
 │   ├── offline/                # Offline distribution builder
+│   ├── bootstrap-agent.sh      # One-command agent install used by the Enroll host walkthrough
 │   └── *.py                    # Initialization, backup, import, export, smoke tools
 ├── scripts/runner/             # Administrator runner configuration and host tuning
 ├── tests/
