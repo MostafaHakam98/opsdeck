@@ -3,8 +3,10 @@ import asyncio
 from contextlib import asynccontextmanager
 import hashlib
 import hmac
+import ipaddress
 import json
 import math
+import re
 import secrets
 import sqlite3
 import time
@@ -27,18 +29,56 @@ METRICS = ("cpu", "memory", "gpu", "rx", "tx", "io_pressure", "ci_running")
 PULSE = ("cpu", "memory", "gpu")
 # Pulse buckets of an hour or more read 15-minute rollups instead of every raw sample.
 ROLLUP_SECONDS = 900
-NODE_COLUMNS = "id,name,cluster,created_at,revoked,last_seen,collected_at,summary,notes,maintenance,ignored_sources"
+NODE_COLUMNS = "id,name,cluster,created_at,revoked,last_seen,collected_at,summary,notes,maintenance,ignored_sources,address"
 IGNORABLE = ("docker", "gpu", "runner", "services")
 # (metric, title, label, critical, warning); all three are percentages.
 ALERT_METRICS = (("cpu", "High CPU load", "CPU", 90, 80), ("memory", "High memory use", "Memory", 90, 80),
                  ("io_pressure", "High I/O pressure", "I/O pressure (avg60)", 25, 10))
 SOURCE_LABELS = {"host": "Host", "docker": "Docker", "gpu": "GPU", "runner": "Runner", "services": "Services"}
+MAX_REPORTED_ADDRESSES = 8
+HOSTNAME = re.compile(r"(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*", re.IGNORECASE)
+
+
+def access_address(value):
+    """An operator-set IP address or DNS name for reaching the host; empty clears it."""
+    if value is None or value == "":
+        return value
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        if HOSTNAME.fullmatch(value):
+            return value.lower()
+    raise ValueError("Use an IPv4/IPv6 address or a DNS host name")
+
+
+def reported_addresses(host):
+    """Agent-reported addresses, validated and bounded; older agents report none."""
+    result = []
+    for item in host.get("addresses") or []:
+        if not isinstance(item, dict) or not isinstance(item.get("address"), str):
+            continue
+        try:
+            address = str(ipaddress.ip_address(item["address"]))
+        except ValueError:
+            continue
+        interface = item.get("interface")
+        result.append({"address": address, "interface": interface[:40] if isinstance(interface, str) else None,
+                       "primary": item.get("primary") is True})
+        if len(result) == MAX_REPORTED_ADDRESSES:
+            break
+    return result
 
 
 class NodeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=120)
     cluster: str = Field(min_length=1, max_length=120)
+    address: str = Field(default="", max_length=253)
+
+    @field_validator("address")
+    @classmethod
+    def valid_address(cls, value):
+        return access_address(value)
 
 
 class ImageCopyRequest(BaseModel):
@@ -59,6 +99,7 @@ class NodeSettingsRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     cluster: str | None = Field(default=None, min_length=1, max_length=120)
     notes: str | None = Field(default=None, max_length=500)
+    address: str | None = Field(default=None, max_length=253)
     maintenance: bool | None = None
     # The host source is the agent itself and cannot be ignored.
     ignored_sources: list[Literal["docker", "gpu", "runner", "services"]] | None = Field(default=None, max_length=4)
@@ -67,6 +108,11 @@ class NodeSettingsRequest(BaseModel):
     @classmethod
     def canonical(cls, value):
         return None if value is None else [name for name in IGNORABLE if name in value]
+
+    @field_validator("address")
+    @classmethod
+    def valid_address(cls, value):
+        return access_address(value)
 
 
 class TelemetrySource(BaseModel):
@@ -232,18 +278,20 @@ class Fleet(Store):
                 db.execute("ALTER TABLE fleet_nodes ADD COLUMN maintenance INTEGER NOT NULL DEFAULT 0")
             if "ignored_sources" not in columns:
                 db.execute("ALTER TABLE fleet_nodes ADD COLUMN ignored_sources TEXT NOT NULL DEFAULT '[]'")
+            if "address" not in columns:
+                db.execute("ALTER TABLE fleet_nodes ADD COLUMN address TEXT NOT NULL DEFAULT ''")
 
-    def enroll(self, name, cluster):
+    def enroll(self, name, cluster, address=""):
         identifier, secret = str(uuid4()), secrets.token_urlsafe(32)
         token = identifier + "." + secret
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT COUNT(*) FROM fleet_nodes").fetchone()[0] >= 1000:
                 raise HTTPException(409, "This server supports up to 1000 enrolled nodes")
-            db.execute("INSERT INTO fleet_nodes(id,name,cluster,token_hash,created_at) VALUES (?,?,?,?,?)",
-                       (identifier, name, cluster, hashlib.sha256(token.encode()).hexdigest(), time.time()))
-            self._audit(db, "Agent enrolled", name + " in " + cluster)
-        return {"id": identifier, "name": name, "cluster": cluster, "token": token}
+            db.execute("INSERT INTO fleet_nodes(id,name,cluster,token_hash,created_at,address) VALUES (?,?,?,?,?,?)",
+                       (identifier, name, cluster, hashlib.sha256(token.encode()).hexdigest(), time.time(), address))
+            self._audit(db, "Agent enrolled", name + " in " + cluster + (" at " + address if address else ""))
+        return {"id": identifier, "name": name, "cluster": cluster, "address": address, "token": token}
 
     @staticmethod
     def _audit(db, title, detail):
@@ -298,7 +346,8 @@ class Fleet(Store):
                                   "source_status": {key: item["status"] for key, item in sources.items()},
                                   "source_messages": {key: item["message"][:300] for key, item in sources.items() if item.get("message")},
                                   "hostname": host["hostname"][:255] if isinstance(host.get("hostname"), str) else None,
-                                  "scope": host["scope"][:40] if isinstance(host.get("scope"), str) else None}, allow_nan=False)
+                                  "scope": host["scope"][:40] if isinstance(host.get("scope"), str) else None,
+                                  "addresses": reported_addresses(host)}, allow_nan=False)
         except (ValueError, OverflowError):
             raise HTTPException(422, "Telemetry must contain finite JSON values")
         with self.connect() as db:
@@ -338,6 +387,7 @@ class Fleet(Store):
             value["source_status"] = summary.get("source_status", {})
             value["hostname"] = summary.get("hostname")
             value["scope"] = summary.get("scope")
+            value["addresses"] = summary.get("addresses", [])
             value["source_messages"] = summary.get("source_messages", {})
             value["maintenance"] = bool(value["maintenance"])
             value["ignored_sources"] = ignored_sources(value["ignored_sources"])
@@ -351,20 +401,21 @@ class Fleet(Store):
         return found[0]
 
     def configure(self, identifier, changes, interval):
-        """Name, cluster, notes, maintenance, and ignored sources only; the agent credential is never touched."""
+        """Name, cluster, notes, address, maintenance, and ignored sources only; the agent credential is never touched."""
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT name,cluster,notes,maintenance,ignored_sources FROM fleet_nodes WHERE id=?", (identifier,)).fetchone()
+            row = db.execute("SELECT name,cluster,notes,maintenance,ignored_sources,address FROM fleet_nodes WHERE id=?", (identifier,)).fetchone()
             if not row:
                 raise HTTPException(404, "Node not found")
-            current = {"name": row[0], "cluster": row[1], "notes": row[2], "maintenance": bool(row[3]), "ignored_sources": ignored_sources(row[4])}
+            current = {"name": row[0], "cluster": row[1], "notes": row[2], "maintenance": bool(row[3]),
+                       "ignored_sources": ignored_sources(row[4]), "address": row[5]}
             changed = {key: value for key, value in changes.items() if value is not None and value != current[key]}
             if changed:
                 stored = {"maintenance": int, "ignored_sources": json.dumps}
                 db.execute("UPDATE fleet_nodes SET " + ",".join(key + "=?" for key in changed) + " WHERE id=?",
                            (*(stored.get(k, str)(v) for k, v in changed.items()), identifier))
                 name = changed.get("name", current["name"])
-                labels = {"name": f"name (was {current['name']})",
+                labels = {"name": f"name (was {current['name']})", "address": f"address ({changed.get('address') or 'cleared'})",
                           "ignored_sources": f"ignored sources ({', '.join(changed.get('ignored_sources') or []) or 'none'})"}
                 fields = [labels.get(key, key) for key in changed if key != "maintenance"]
                 if fields:
@@ -558,7 +609,7 @@ def create_fleet_app(settings):
 
     @app.post("/api/fleet/nodes", dependencies=[Depends(authenticate)])
     def enroll(body: NodeRequest):
-        return fleet.enroll(body.name, body.cluster)
+        return fleet.enroll(body.name, body.cluster, body.address)
 
     @app.post("/api/fleet/nodes/{identifier}/revoke", dependencies=[Depends(authenticate)])
     def revoke(identifier: UUID):

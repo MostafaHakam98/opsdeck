@@ -6,6 +6,7 @@ import {
   Search,
 } from "lucide-react";
 import {
+  HostAddress,
   MiniBar,
   Section,
   Segmented,
@@ -256,6 +257,7 @@ function HostCard({
         ) : (
           <span className="fleet-na">Awaiting agent</span>
         )}
+        <HostAddress node={node} />
         <span>{node.cluster}</span>
       </p>
       <div className="host-card-bars">
@@ -337,6 +339,9 @@ function HostTable(props: HostsViewProps) {
                   <ChevronRight size={14} aria-hidden="true" />
                 </button>
                 <small>{node.hostname || "Awaiting agent"}</small>
+                <small>
+                  <HostAddress node={node} />
+                </small>
               </td>
               <td>{node.cluster}</td>
               <td>

@@ -85,7 +85,7 @@ This binds to `http://127.0.0.1:8080` by default. HTTP agent delivery is accepte
 ## Enroll each runner host
 
 1. Open **Enroll host** in the central dashboard.
-2. Enter a host name and its cluster/network name.
+2. Enter a host name, its cluster/network name, and optionally the access address people use to reach it.
 3. Save the credential shown once. It belongs to this host only.
 4. On that runner host, create a private `.env.agent` using the displayed server URL and credential. The full template is [`.env.agent.example`](../../.env.agent.example).
 
@@ -191,7 +191,7 @@ The fleet overview derives alerts from each host's latest state on every request
 
 Load and collector rules apply only to online hosts, because an offline or stale host's readings are old. Waiting and revoked hosts raise nothing. Alerts are sorted critical first, then by host name. The overview `summary` counts hosts per status, hosts in maintenance, clusters, and alerts, and averages CPU, memory, and GPU over online hosts that report a value.
 
-Put a host into maintenance before planned work. Maintenance silences all of its alerts without hiding the host or its status. Name, cluster, notes (up to 500 characters), and maintenance are changed with `POST /api/fleet/nodes/{id}/settings`; each change is recorded in **Fleet audit** ("Host settings changed", "Maintenance started", "Maintenance ended"). Renaming or moving a host does not change its agent credential.
+Put a host into maintenance before planned work. Maintenance silences all of its alerts without hiding the host or its status. Name, cluster, notes (up to 500 characters), access address, and maintenance are changed with `POST /api/fleet/nodes/{id}/settings`; each change is recorded in **Fleet audit** ("Host settings changed", "Maintenance started", "Maintenance ended"). Renaming or moving a host does not change its agent credential.
 
 Uncheck collectors a host does not run under **Host settings > Monitored collectors** (`ignored_sources`: any of `docker`, `gpu`, `runner`, `services`). Ignored collectors are shown as "not monitored" and raise no alerts. See "Agent collector shows unavailable" in the [troubleshooting guide](../guides/troubleshooting.md) for the common Docker timeout, runner listener, and systemd bus causes.
 

@@ -388,6 +388,7 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
     .click();
   await page.getByLabel("Host name", { exact: true }).fill(name);
   await page.getByLabel("Cluster or network").fill(cluster);
+  await page.getByLabel("Access address (optional)").fill("10.20.30.40");
   await page.getByRole("button", { name: "Create agent credential" }).click();
   const modal = page.getByRole("dialog");
   await expect(modal).toBeVisible();
@@ -413,6 +414,9 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
       ],
       network: [],
       disks: [],
+      addresses: [
+        { interface: "eth0", address: "192.0.2.10", family: 4, primary: true },
+      ],
     },
     docker: {
       ci_running: 3,
@@ -452,6 +456,9 @@ test("enroll, ingest, filter, drill down, rotate, and revoke through the real AP
   await page.getByRole("button", { name: "Saved, view host" }).click();
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
   await expect(page.getByText("37.0%", { exact: true })).toBeVisible();
+  // The operator-set address wins over the one the agent reports.
+  await expect(page.getByText("10.20.30.40", { exact: true })).toBeVisible();
+  await expect(page.getByText("192.0.2.10", { exact: true })).toHaveCount(0);
   await page.getByRole("tab", { name: "Containers", exact: true }).click();
   await expect(
     page.getByRole("cell", { name: "ci-job-123", exact: true }),

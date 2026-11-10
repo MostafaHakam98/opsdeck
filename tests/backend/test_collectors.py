@@ -5,7 +5,9 @@ import docker
 import httpx
 import requests
 
-from backend.collectors import DockerCollector, failure, runner_collect, services_collect
+import socket
+
+from backend.collectors import DockerCollector, default_route_interface, failure, interface_addresses, runner_collect, services_collect
 from backend.config import Settings
 
 
@@ -138,3 +140,37 @@ def test_services_explain_selinux_denied_bus_seen_on_daos(tmp_path, monkeypatch)
     monkeypatch.setattr("backend.collectors.subprocess.run", refuse)
     result = services_collect(Settings(services=["docker.service"], host_root=str(tmp_path)))
     assert result["message"].startswith("The container cannot reach the host's systemd bus.")
+
+
+ROUTES = """Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT
+wlan0\t00000000\t011B10AC\t0003\t0\t0\t600\t00000000\t0\t0\t0
+eno1\t00000000\t011B10AC\t0003\t0\t0\t100\t00000000\t0\t0\t0
+docker0\t000011AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0
+"""
+
+
+def test_default_route_prefers_the_lowest_metric_and_tolerates_missing_procfs(tmp_path):
+    (tmp_path / "net").mkdir()
+    (tmp_path / "net" / "route").write_text(ROUTES)
+    assert default_route_interface(str(tmp_path)) == "eno1"
+    assert default_route_interface(str(tmp_path / "missing")) is None
+
+
+def test_interface_addresses_put_the_default_route_first_and_skip_unreachable(tmp_path, monkeypatch):
+    (tmp_path / "net").mkdir()
+    (tmp_path / "net" / "route").write_text(ROUTES)
+    def entry(family, address):
+        return SimpleNamespace(family=family, address=address)
+    monkeypatch.setattr("backend.collectors.psutil.net_if_addrs", lambda: {
+        "lo": [entry(socket.AF_INET, "127.0.0.1"), entry(socket.AF_INET6, "::1")],
+        "wlan0": [entry(socket.AF_INET, "192.168.1.20"), entry(socket.AF_INET6, "fe80::1%wlan0")],
+        "eno1": [entry(socket.AF_PACKET, "aa:bb:cc:dd:ee:ff"), entry(socket.AF_INET6, "2001:db8::5"),
+                 entry(socket.AF_INET, "172.16.27.118"), entry(socket.AF_INET, "172.16.27.119")],
+        "docker0": [entry(socket.AF_INET, "172.17.0.1")],
+        "tailscale0": [entry(socket.AF_INET, "100.64.0.7")],
+    })
+    by_interface, reachable = interface_addresses(str(tmp_path))
+    assert by_interface == {"wlan0": ["192.168.1.20"], "eno1": ["2001:db8::5", "172.16.27.118", "172.16.27.119"],
+                            "docker0": ["172.17.0.1"], "tailscale0": ["100.64.0.7"]}
+    assert [(a["address"], a["primary"]) for a in reachable] == [
+        ("172.16.27.118", True), ("172.16.27.119", False), ("192.168.1.20", False), ("100.64.0.7", False), ("2001:db8::5", False)]

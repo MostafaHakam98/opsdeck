@@ -79,10 +79,24 @@ export const HEAT_LEGEND = [
 ];
 
 export type HostFilter = { query: string; state: string; cluster: string };
+/**
+ * Where to reach the host: the operator-set address wins over what the agent
+ * reports, because NAT and several interfaces can make the reported one wrong.
+ */
+export function accessAddress(node: Node): string | null {
+  if (node.address) return node.address;
+  const reported = node.addresses || [];
+  return (reported.find((a) => a.primary) || reported[0])?.address ?? null;
+}
+export function addressSource(node: Node): "operator" | "agent" | null {
+  if (node.address) return "operator";
+  return node.addresses?.length ? "agent" : null;
+}
 export function matchesQuery(node: Node, query: string) {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
-  return `${node.name} ${node.hostname || ""} ${node.cluster} ${node.notes || ""}`
+  const addresses = (node.addresses || []).map((a) => a.address).join(" ");
+  return `${node.name} ${node.hostname || ""} ${node.cluster} ${node.notes || ""} ${node.address || ""} ${addresses}`
     .toLowerCase()
     .includes(needle);
 }
@@ -491,6 +505,8 @@ export function hostsCsv(nodes: Node[]) {
       "last_observation_seconds",
       "last_contact",
       "notes",
+      "address",
+      "reported_addresses",
     ],
     nodes.map((n) => [
       n.name,
@@ -505,6 +521,8 @@ export function hostsCsv(nodes: Node[]) {
       round(n.age_seconds, 0),
       n.last_seen === null ? null : new Date(n.last_seen * 1000).toISOString(),
       n.notes || "",
+      accessAddress(n),
+      (n.addresses || []).map((a) => a.address).join(" "),
     ]),
   );
 }

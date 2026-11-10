@@ -20,6 +20,15 @@ export type Node = {
   source_messages?: Record<string, string>;
   /** Collectors this host does not run; they never raise alerts. */
   ignored_sources?: string[];
+  /** Operator-set IP or DNS name for reaching the host; empty when unset. */
+  address?: string;
+  /** Agent-reported addresses, default-route address first; absent on older agents. */
+  addresses?: ReportedAddress[];
+};
+export type ReportedAddress = {
+  address: string;
+  interface: string | null;
+  primary: boolean;
 };
 export type Summary = {
   hosts: number;
@@ -84,6 +93,7 @@ export type Credential = {
   id: string;
   name?: string;
   cluster?: string;
+  address?: string;
   token: string;
 };
 export type Point = { ts: number; [key: string]: number | null };

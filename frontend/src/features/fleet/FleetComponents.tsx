@@ -1,5 +1,13 @@
-import React, { useRef } from "react";
-import { heatColor, percentText, sparklinePath } from "./fleetModel";
+import React, { useRef, useState } from "react";
+import { Check, Copy } from "lucide-react";
+import {
+  accessAddress,
+  addressSource,
+  heatColor,
+  percentText,
+  sparklinePath,
+} from "./fleetModel";
+import type { Node } from "./types";
 
 export function Status({ value, pill }: { value: string; pill?: boolean }) {
   return (
@@ -28,6 +36,52 @@ export function NotReported({
   children?: React.ReactNode;
 }) {
   return <span className="fleet-na">{children}</span>;
+}
+/**
+ * Where to reach the host, with a copy button. The title says whether an
+ * operator set it or the agent reported it.
+ */
+export function HostAddress({
+  node,
+  empty = "No address",
+}: {
+  node: Node;
+  empty?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const address = accessAddress(node);
+  if (!address) return <NotReported>{empty}</NotReported>;
+  const reported = node.addresses?.find((a) => a.address === address);
+  const source =
+    addressSource(node) === "operator"
+      ? "Set by an operator"
+      : `Reported by the agent${reported?.interface ? ` on ${reported.interface}` : ""}`;
+  return (
+    <span className="fleet-address" title={source}>
+      <code>{address}</code>
+      <button
+        type="button"
+        className="fleet-icon-button"
+        aria-label={copied ? `Copied ${address}` : `Copy address ${address}`}
+        onClick={async (event) => {
+          event.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(address);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          } catch {
+            setCopied(false);
+          }
+        }}
+      >
+        {copied ? (
+          <Check size={12} aria-hidden="true" />
+        ) : (
+          <Copy size={12} aria-hidden="true" />
+        )}
+      </button>
+    </span>
+  );
 }
 /**
  * Data table. `numeric` names right-aligned columns; an empty body renders one

@@ -12,7 +12,7 @@ For the Docker path below, use Linux, Docker Engine, Compose 2.30+, GNU Make, Py
 
 ## Step 1 — create this machine's fleet identity
 
-Open **Enroll host** on the central dashboard. Enter a recognizable host name and cluster/network, then click **Create agent credential**. Save the displayed server URL and host credential once in a protected place.
+Open **Enroll host** on the central dashboard. Enter a recognizable host name and cluster/network, optionally the address people use to reach the machine, then click **Create agent credential**. Save the displayed server URL and host credential once in a protected place.
 
 Use the central dashboard’s **Enroll host** form; one credential belongs to one machine.
 

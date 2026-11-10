@@ -16,6 +16,7 @@ type Values = {
   name: string;
   cluster: string;
   notes: string;
+  address: string;
   maintenance: boolean;
   ignored: string[];
 };
@@ -27,6 +28,7 @@ function values(node: Node): Values {
     name: node.name,
     cluster: node.cluster,
     notes: node.notes || "",
+    address: node.address || "",
     maintenance: Boolean(node.maintenance),
     ignored: canonical(node.ignored_sources || []),
   };
@@ -50,6 +52,7 @@ export function HostSettings({
   const [name, setName] = useState(base.name);
   const [cluster, setCluster] = useState(base.cluster);
   const [notes, setNotes] = useState(base.notes);
+  const [address, setAddress] = useState(base.address);
   const [maintenance, setMaintenance] = useState(base.maintenance);
   const [ignored, setIgnored] = useState(base.ignored);
   const [busy, setBusy] = useState(false);
@@ -57,11 +60,20 @@ export function HostSettings({
     null,
   );
   const changes: Partial<
-    Pick<Node, "name" | "cluster" | "notes" | "maintenance" | "ignored_sources">
+    Pick<
+      Node,
+      | "name"
+      | "cluster"
+      | "notes"
+      | "address"
+      | "maintenance"
+      | "ignored_sources"
+    >
   > = {};
   if (name.trim() !== base.name) changes.name = name.trim();
   if (cluster.trim() !== base.cluster) changes.cluster = cluster.trim();
   if (notes !== base.notes) changes.notes = notes;
+  if (address.trim() !== base.address) changes.address = address.trim();
   if (maintenance !== base.maintenance) changes.maintenance = maintenance;
   if (ignored.join() !== base.ignored.join()) changes.ignored_sources = ignored;
   const dirty = Object.keys(changes).length > 0;
@@ -80,6 +92,7 @@ export function HostSettings({
       setName(saved.name);
       setCluster(saved.cluster);
       setNotes(saved.notes);
+      setAddress(saved.address);
       setMaintenance(saved.maintenance);
       setIgnored(saved.ignored);
       setResult({ ok: true, text: "Settings saved." });
@@ -125,6 +138,28 @@ export function HostSettings({
                 <option key={c} value={c} />
               ))}
             </datalist>
+          </label>
+          <label className="fleet-form-wide">
+            <span className="fleet-label">Access address</span>
+            <input
+              maxLength={253}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder={
+                node.addresses?.[0]?.address
+                  ? `Agent reports ${node.addresses[0].address}`
+                  : "IP address or DNS name"
+              }
+              spellCheck={false}
+              autoCapitalize="off"
+            />
+            <small className="fleet-hint">
+              <span>
+                Shown on the fleet page so people with their own credentials can
+                reach this host. Leave empty to use the address the agent
+                reports.
+              </span>
+            </small>
           </label>
           <label className="fleet-form-wide">
             <span className="fleet-label">Notes</span>

@@ -104,6 +104,7 @@ export function FleetApp({
   const [credential, setCredential] = useState<Credential | null>(null);
   const [name, setName] = useState("");
   const [newCluster, setNewCluster] = useState("");
+  const [newAddress, setNewAddress] = useState("");
   const [confirm, setConfirm] = useState("");
   const [paused, setPaused] = useState(
     () => readStored(session, PAUSE_KEY, "") === "1",
@@ -692,7 +693,7 @@ export function FleetApp({
                   e.preventDefault();
                   void mutate(
                     "fleet/nodes",
-                    { name, cluster: newCluster },
+                    { name, cluster: newCluster, address: newAddress.trim() },
                     true,
                   );
                 }}
@@ -723,11 +724,23 @@ export function FleetApp({
                     ))}
                   </datalist>
                 </label>
+                <label>
+                  Access address (optional)
+                  <input
+                    maxLength={253}
+                    value={newAddress}
+                    onChange={(e) => setNewAddress(e.target.value)}
+                    placeholder="172.16.27.118 or runner-01.example.com"
+                    spellCheck={false}
+                    autoCapitalize="off"
+                  />
+                </label>
                 <p>
                   The agent needs outbound HTTPS access to this server. Its
                   credential is limited to sending this host's telemetry. Next,
                   you save the credential in <code>.env.agent</code> on the host
-                  and run <code>make agent-install</code>.
+                  and run <code>make agent-install</code>. Without an access
+                  address, the address the agent reports is shown.
                 </p>
                 <button className="primary" disabled={busy || !!credential}>
                   {busy ? "Enrolling..." : "Create agent credential"}

@@ -54,6 +54,26 @@
   background: var(--surface-3);
   color: var(--text);
 }
+/* Host address with an inline copy button. */
+.fleet-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.fleet-address code {
+  font-variant-numeric: tabular-nums;
+}
+.fleet-address .fleet-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+.fleet-address-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
 .fleet-topbar .fleet-mobile-signout {
   display: none;
 }

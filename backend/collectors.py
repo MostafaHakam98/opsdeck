@@ -2,6 +2,7 @@
 import concurrent.futures
 import csv
 import io
+import ipaddress
 import json
 import math
 import os
@@ -58,6 +59,47 @@ def pressure(procfs_path="/proc"):
     return result
 
 
+# Container bridges and overlay links carry addresses nobody can reach the host through.
+VIRTUAL_INTERFACES = ("docker", "br-", "veth", "virbr", "vnet", "cni", "flannel", "cali", "kube-ipvs", "lxcbr", "lxdbr")
+
+
+def default_route_interface(procfs_path="/proc"):
+    """The IPv4 default-route interface with the lowest metric, or None."""
+    try:
+        rows = [line.split() for line in Path(procfs_path, "net", "route").read_text().splitlines()[1:]]
+    except OSError:
+        return None
+    defaults = [(int(row[6]), row[0]) for row in rows if len(row) > 7 and row[1] == "00000000" and row[7] == "00000000"]
+    return min(defaults)[1] if defaults else None
+
+
+def interface_addresses(procfs_path="/proc"):
+    """Per-interface addresses, and reachable host addresses with the default-route address first."""
+    primary = default_route_interface(procfs_path)
+    by_interface, reachable = {}, []
+    for name, entries in psutil.net_if_addrs().items():
+        for entry in entries:
+            if entry.family not in (socket.AF_INET, socket.AF_INET6):
+                continue
+            address = entry.address.split("%", 1)[0]
+            try:
+                parsed = ipaddress.ip_address(address)
+            except ValueError:
+                continue
+            if parsed.is_loopback or parsed.is_link_local or parsed.is_unspecified:
+                continue
+            by_interface.setdefault(name, []).append(address)
+            if not name.startswith(VIRTUAL_INTERFACES):
+                reachable.append({"interface": name, "address": address, "family": parsed.version,
+                                  "primary": name == primary and parsed.version == 4})
+    # Primary first, then IPv4 before IPv6, otherwise the kernel's interface order.
+    # Only one address is primary, even when the default-route interface has several.
+    reachable.sort(key=lambda item: (not item["primary"], item["family"]))
+    for index, item in enumerate(reachable):
+        item["primary"] = item["primary"] and index == 0
+    return by_interface, reachable
+
+
 def host_partitions(host_root, procfs_path):
     """Read PID 1's mount namespace, not the monitoring container's /proc/self/mounts."""
     def unescape(value):
@@ -95,12 +137,14 @@ class HostCollector:
         self.previous = (now, net, disks)
         networks = []
         stats = psutil.net_if_stats()
+        by_interface, addresses = interface_addresses(self.procfs_path)
         for name, counters in net.items():
             if name == "lo":
                 continue
             prev = old_net.get(name)
             state = stats.get(name)
             networks.append({"name": name, "up": state.isup if state else False, "speed_mbps": state.speed if state else None,
+                "addresses": by_interface.get(name, []),
                 "rx_bytes_s": max(0, counters.bytes_recv - prev.bytes_recv) / elapsed if prev else None,
                 "tx_bytes_s": max(0, counters.bytes_sent - prev.bytes_sent) / elapsed if prev else None,
                 "errors": counters.errin + counters.errout, "drops": counters.dropin + counters.dropout})
@@ -176,7 +220,7 @@ class HostCollector:
                 "load": list(os.getloadavg()), "mhz": freq.current if freq else None, **preferences},
             "memory": {"total": vm.total, "available": vm.available, "used": vm.total - vm.available, "percent": vm.percent,
                 "cached": getattr(vm, "cached", None), "swap_total": swap.total, "swap_used": swap.used},
-            "volumes": volumes, "disks": disk_rates, "inventory": self.inventory, "network": networks,
+            "volumes": volumes, "disks": disk_rates, "inventory": self.inventory, "network": networks, "addresses": addresses,
             "pressure": pressure(self.procfs_path), "temperatures": temperatures,
             "processes": len(psutil.pids()), "top_processes": sorted(processes, key=lambda p: p["memory_bytes"], reverse=True)[:15]})
 

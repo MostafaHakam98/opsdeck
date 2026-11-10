@@ -257,10 +257,12 @@ def test_schema_migration_adds_defaulted_columns_idempotently_and_stays_rollback
     with fleet.connect() as db:
         columns = [row[1] for row in db.execute("PRAGMA table_info(fleet_nodes)")]
         assert columns.count("notes") == 1 and columns.count("maintenance") == 1 and columns.count("ignored_sources") == 1
+        assert columns.count("address") == 1
         # The previous release inserts and reads with explicit column lists only.
         db.execute("INSERT INTO fleet_nodes(id,name,cluster,token_hash,created_at) VALUES ('new','n','a','y',2)")
         assert db.execute("SELECT id,name,cluster,created_at,revoked,last_seen,collected_at,summary FROM fleet_nodes WHERE id='new'").fetchone()[0] == "new"
     assert fleet.node("new", 10)["maintenance"] is False and fleet.node("new", 10)["ignored_sources"] == []
+    assert (fleet.node("new", 10)["address"], fleet.node("old", 10)["addresses"]) == ("", [])
 
 
 def test_alert_rules_thresholds_suppression_and_order():
@@ -552,3 +554,38 @@ def test_source_messages_become_alert_details_and_ignored_sources_stay_silent(ap
         cleared = client.post(url, headers=OPERATOR, json={"ignored_sources": []}).json()
         assert cleared["ignored_sources"] == [] and client.get("/api/events", headers=OPERATOR).json()[0]["detail"] == "runner-01: ignored sources (none)"
         assert len(client.get("/api/fleet", headers=OPERATOR).json()["alerts"]) == 3
+
+
+def test_access_address_is_validated_on_enrollment_and_settings_and_audited(app):
+    with TestClient(app) as client:
+        for bad in ("not an address!", "-leading.example", "a" * 254, "10.0.0.1/24", "http://10.0.0.1"):
+            result = client.post("/api/fleet/nodes", headers=OPERATOR, json={"name": "x", "cluster": "a", "address": bad})
+            assert result.status_code == 422, bad
+        node = client.post("/api/fleet/nodes", headers=OPERATOR, json={"name": "nuke", "cluster": "lab", "address": " 172.16.27.118 "}).json()
+        assert node["address"] == "172.16.27.118"
+        assert client.get("/api/fleet/nodes/" + node["id"], headers=OPERATOR).json()["node"]["address"] == "172.16.27.118"
+        assert enroll(client, "plain")["address"] == ""
+        assert client.get("/api/events", headers=OPERATOR).json()[1]["detail"] == "nuke in lab at 172.16.27.118"
+        path = f'/api/fleet/nodes/{node["id"]}/settings'
+        assert client.post(path, headers=OPERATOR, json={"address": "Nuke.Lab.Example"}).json()["address"] == "nuke.lab.example"
+        assert client.post(path, headers=OPERATOR, json={"address": "2001:DB8::0:5"}).json()["address"] == "2001:db8::5"
+        assert client.post(path, headers=OPERATOR, json={"address": "bad address"}).status_code == 422
+        assert client.post(path, headers=OPERATOR, json={"address": ""}).json()["address"] == ""
+        details = [e["detail"] for e in client.get("/api/events", headers=OPERATOR).json()[:3]]
+        assert details == ["nuke: address (cleared)", "nuke: address (2001:db8::5)", "nuke: address (nuke.lab.example)"]
+
+
+def test_reported_addresses_are_validated_bounded_and_kept_in_the_node_summary(app):
+    with TestClient(app) as client:
+        node = enroll(client)
+        sample = envelope()
+        sample["sources"]["host"]["data"]["addresses"] = [
+            {"interface": "eno1", "address": "172.16.27.118", "family": 4, "primary": True},
+            {"interface": "eno1", "address": "not-an-ip"}, "junk", {"address": 7},
+            *({"interface": "x" * 60, "address": f"10.0.0.{i}", "primary": "yes"} for i in range(10))]
+        assert client.post("/api/agent/telemetry", headers=agent(node), json=sample).status_code == 200
+        listed = client.get("/api/fleet", headers=OPERATOR).json()["nodes"][0]
+        addresses = listed["addresses"]
+        assert len(addresses) == 8
+        assert addresses[0] == {"address": "172.16.27.118", "interface": "eno1", "primary": True}
+        assert addresses[1] == {"address": "10.0.0.0", "interface": "x" * 40, "primary": False}
